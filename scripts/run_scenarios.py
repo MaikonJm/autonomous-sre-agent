@@ -13,6 +13,7 @@ Uso:
 
 import json
 import pathlib
+import shlex
 import subprocess
 import sys
 import time
@@ -26,7 +27,8 @@ AGENT = "http://localhost:18080"
 
 
 def sh(cmd: str, check=True) -> str:
-    r = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    # Sem shell: os argumentos vão direto ao kubectl (nada é interpretado por um shell)
+    r = subprocess.run(shlex.split(cmd), capture_output=True, text=True)
     if check and r.returncode:
         raise RuntimeError(f"{cmd}\n{r.stderr}")
     return r.stdout.strip()
