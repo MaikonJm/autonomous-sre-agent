@@ -1,0 +1,65 @@
+# CI: qualidade e segurança a cada push/PR.
+# Testes e validações BLOQUEIAM o merge. Os scanners de segurança começam em modo
+# relatório (não bloqueiam): primeiro calibrar falsos positivos, depois virar gate.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  agent-tests:
+    name: Testes do agente (cluster simulado)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r apps/sre-agent/requirements.txt pytest
+      - run: cd apps/sre-agent && pytest -q
+
+  terraform:
+    name: Terraform fmt + validate
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: infra/terraform } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate
+
+  manifests:
+    name: Manifests Kubernetes (kubeconform)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+          for f in k8s/orders/*.yaml k8s/loadtest/*.yaml k8s/sre-agent/*.yaml; do
+            sed 's#ORDERS_API_IMAGE#x/y:z#;s#SRE_AGENT_IMAGE#x/a:b#' "$f" > /tmp/m.yaml
+            ./kubeconform -strict -summary -kubernetes-version 1.31.0 \
+              -schema-location default \
+              -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' /tmp/m.yaml
+          done
+
+  security:
+    name: Segurança (SAST + IaC + dependências), modo relatório
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: SAST com Semgrep
+        run: |
+          pip install semgrep
+          semgrep scan --config p/python --config p/dockerfile --config p/terraform --metrics=off || true
+      - name: Trivy (dependências vulneráveis + misconfig em Dockerfile, K8s e Terraform)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scanners: vuln,misconfig
+          severity: HIGH,CRITICAL
+          exit-code: "0"

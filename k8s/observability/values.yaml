@@ -1,0 +1,50 @@
+# kube-prometheus-stack enxuto para 1 nó (helm release "kps", namespace monitoring)
+prometheus:
+  prometheusSpec:
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    retention: 2d
+    serviceMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    resources:
+      requests: { cpu: 100m, memory: 400Mi }
+
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests: { cpu: 10m, memory: 32Mi }
+  config:
+    route:
+      receiver: "null"
+      group_by: ["alertname"]
+      routes:
+        - matchers: ['agent="sre"']
+          receiver: sre-agent
+          group_wait: 10s
+          group_interval: 1m
+          repeat_interval: 10m
+    receivers:
+      - name: "null"
+      - name: sre-agent
+        webhook_configs:
+          - url: http://sre-agent.sre-agent:8080/alertmanager
+            send_resolved: false
+
+grafana:
+  adminPassword: admin   # só para a demo; acesso via port-forward
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+
+# Componentes do control plane gerenciado do AKS não são acessíveis: desligar evita alertas falsos
+kubeEtcd: { enabled: false }
+kubeScheduler: { enabled: false }
+kubeControllerManager: { enabled: false }
+kubeProxy: { enabled: false }
+defaultRules:
+  rules:
+    etcd: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+    kubeControllerManager: false
+    kubeProxy: false

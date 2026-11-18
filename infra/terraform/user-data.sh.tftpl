@@ -1,0 +1,29 @@
+#!/bin/bash
+# Primeiro boot do nó: k3s + ferramentas + clone do repositório + (opcional) deploy completo.
+# Roda uma única vez (cloud-init). Num stop/start o k3s sobe sozinho com tudo que já estava instalado.
+set -euxo pipefail
+export HOME=/root
+exec > >(tee -a /var/log/sre-lab-deploy.log) 2>&1
+
+# ---------- k3s (Kubernetes de 1 nó) ----------
+curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="${k3s_version}" sh -s - --write-kubeconfig-mode 644
+echo 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml' > /etc/profile.d/k3s.sh
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+
+# ---------- ferramentas ----------
+apt-get update -qq
+apt-get install -y -qq docker.io git python3
+curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+# ---------- código ----------
+git clone "${repo_url}" /opt/lab
+chmod -R a+rwX /opt/lab   # o usuário da sessão SSM pode rodar os scripts e gravar relatórios
+echo 'cd /opt/lab 2>/dev/null || true' > /etc/profile.d/lab.sh
+
+# espera o nó ficar Ready antes de instalar qualquer coisa
+until kubectl get nodes 2>/dev/null | grep -q " Ready"; do sleep 5; done
+
+%{ if auto_deploy ~}
+/opt/lab/scripts/deploy-on-node.sh
+%{ endif ~}
+echo "PRIMEIRO BOOT CONCLUIDO"

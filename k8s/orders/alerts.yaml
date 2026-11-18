@@ -1,0 +1,48 @@
+# SLO: 99,5% das requisições sem 5xx. Alertas AJUSTADOS PARA DEMO: janelas
+# curtas (1m/5m) e `for: 1m` para detectar em ~2 min. Em produção: burn rate
+# multi-janela 1h/5m e 6h/30m (ver projeto sre-platform-demo).
+# Todo alerta leva agent=sre (roteado ao agente) e namespace=orders.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: orders-api-slo
+  namespace: orders
+spec:
+  groups:
+    - name: orders-api.recording
+      interval: 15s
+      rules:
+        - record: orders_api:error_ratio:rate1m
+          expr: sum(rate(http_requests_total{namespace="orders",status=~"5.."}[1m])) / sum(rate(http_requests_total{namespace="orders"}[1m]))
+        - record: orders_api:error_ratio:rate5m
+          expr: sum(rate(http_requests_total{namespace="orders",status=~"5.."}[5m])) / sum(rate(http_requests_total{namespace="orders"}[5m]))
+        - record: orders_api:p95_latency:rate2m
+          expr: histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{namespace="orders"}[2m])))
+    - name: orders-api.alerts
+      interval: 15s
+      rules:
+        - alert: OrdersApiHighErrorRate
+          # 14,4 x 0,5% = 7,2%: queimando o budget 14x mais rápido que o sustentável
+          expr: orders_api:error_ratio:rate1m > 0.072 and orders_api:error_ratio:rate5m > 0.072
+          for: 1m
+          labels: { severity: critical, agent: sre, namespace: orders }
+          annotations:
+            summary: "orders-api com {{ $value | humanizePercentage }} de erros (SLO 99,5%)"
+        - alert: OrdersApiHighLatency
+          expr: orders_api:p95_latency:rate2m > 0.3
+          for: 1m
+          labels: { severity: critical, agent: sre, namespace: orders }
+          annotations:
+            summary: "p95 do orders-api em {{ $value | humanizeDuration }} (SLO 300 ms)"
+        - alert: OrdersApiPodsFailing
+          expr: max(kube_pod_container_status_waiting_reason{namespace="orders",reason=~"CrashLoopBackOff|ImagePullBackOff|ErrImagePull|CreateContainerConfigError"}) > 0
+          for: 1m
+          labels: { severity: warning, agent: sre, namespace: orders }
+          annotations:
+            summary: "Pods do namespace orders não sobem (CrashLoop/ImagePull)"
+        - alert: OrdersApiNoReplicas
+          expr: kube_deployment_spec_replicas{namespace="orders",deployment="orders-api"} == 0
+          for: 1m
+          labels: { severity: critical, agent: sre, namespace: orders }
+          annotations:
+            summary: "orders-api está com 0 réplicas: serviço fora do ar"

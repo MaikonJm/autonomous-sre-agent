@@ -1,0 +1,118 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sre-agent
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sre-agent
+  namespace: sre-agent
+---
+# Menor privilégio: leitura no namespace orders + escrita SÓ em deployments.
+# O agente não consegue apagar nada, ler Secrets, executar em pods ou tocar outro namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sre-agent
+  namespace: orders
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events", "services"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "update", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sre-agent
+  namespace: orders
+subjects:
+  - { kind: ServiceAccount, name: sre-agent, namespace: sre-agent }
+roleRef:
+  { kind: Role, name: sre-agent, apiGroup: rbac.authorization.k8s.io }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sre-agent-config
+  namespace: sre-agent
+data:
+  TARGET_NAMESPACE: orders
+  TARGET_DEPLOYMENTS: orders-api
+  PROMETHEUS_URL: http://kps-kube-prometheus-stack-prometheus.monitoring:9090
+  DRY_RUN: "false"
+  MIN_CONFIDENCE: medium
+  MAX_ATTEMPTS: "2"
+  MAX_ACTIONS_PER_HOUR: "10"
+  COOLDOWN_SECONDS: "120"
+  VERIFY_TIMEOUT_SECONDS: "240"
+  AWS_REGION: us-east-1
+  BEDROCK_MODEL_ID: us.amazon.nova-micro-v1:0
+  # Credencial AWS: o SDK busca a role do nó via IMDSv2 (temporária, renovada sozinha).
+  # Em EKS seria EKS Pod Identity/IRSA: uma role por service account.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sre-agent
+  namespace: sre-agent
+  labels: { app: sre-agent }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: sre-agent }
+  template:
+    metadata:
+      labels: { app: sre-agent }
+    spec:
+      serviceAccountName: sre-agent
+      securityContext: { runAsNonRoot: true, runAsUser: 10001 }
+      containers:
+        - name: agent
+          image: SRE_AGENT_IMAGE
+          ports: [{ name: http, containerPort: 8080 }]
+          envFrom:
+            - configMapRef: { name: sre-agent-config }
+          env:
+            - name: GITHUB_TOKEN
+              valueFrom: { secretKeyRef: { name: sre-agent-github, key: token, optional: true } }
+            - name: GITHUB_REPOSITORY
+              valueFrom: { secretKeyRef: { name: sre-agent-github, key: repository, optional: true } }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 384Mi }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sre-agent
+  namespace: sre-agent
+  labels: { app: sre-agent }
+spec:
+  selector: { app: sre-agent }
+  ports: [{ name: http, port: 8080, targetPort: http }]
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: sre-agent
+  namespace: sre-agent
+spec:
+  selector:
+    matchLabels: { app: sre-agent }
+  endpoints:
+    - { port: http, path: /metrics, interval: 30s }
