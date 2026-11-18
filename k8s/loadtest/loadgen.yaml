@@ -27,3 +27,11 @@ spec:
           resources:
             requests: { cpu: 20m, memory: 48Mi }
             limits: { memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: { medium: Memory, sizeLimit: 16Mi } }

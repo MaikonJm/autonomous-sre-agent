@@ -61,7 +61,7 @@ Fluxo de um alerta: `orders-api` gera erros → Prometheus calcula a taxa de err
 
 ## 5. CI: `.github/workflows/ci.yml`
 
-A cada push: testes do agente, `terraform fmt` + `validate`, kubeconform nos manifests (bloqueiam). Semgrep (SAST) e Trivy (dependências e misconfig) em modo relatório.
+A cada push, tudo bloqueante: testes do agente, `terraform fmt` + `validate`, kubeconform, Semgrep (SAST) e Trivy (dependências e misconfig). Exceções aceitas ficam justificadas em `.trivyignore`.
 
 ## 6. Onde olhar durante a demo
 

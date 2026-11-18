@@ -1,6 +1,6 @@
-# CI: qualidade e segurança a cada push/PR.
-# Testes e validações BLOQUEIAM o merge. Os scanners de segurança começam em modo
-# relatório (não bloqueiam): primeiro calibrar falsos positivos, depois virar gate.
+# CI: qualidade e segurança a cada push/PR. Tudo aqui BLOQUEIA o merge.
+# Os scanners rodaram primeiro em modo relatório; os achados foram triados (corrigidos,
+# ou aceitos com justificativa em .trivyignore / nosemgrep) e então viraram gate.
 name: ci
 
 on:
@@ -48,15 +48,17 @@ jobs:
           done
 
   security:
-    name: Segurança (SAST + IaC + dependências), modo relatório
+    name: Segurança (SAST + IaC + dependências)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: SAST com Semgrep
         run: |
           pip install semgrep
-          semgrep scan --config p/python --config p/dockerfile --config p/terraform --metrics=off || true
+          semgrep scan --config p/python --config p/dockerfile --config p/terraform --metrics=off --error \
+            --exclude infra/azure-aks-reference
       - name: Trivy (dependências vulneráveis + misconfig em Dockerfile, K8s e Terraform)
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
-          trivy fs --scanners vuln,misconfig --severity HIGH,CRITICAL --exit-code 0 .
+          trivy fs --scanners vuln,misconfig --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
+            --skip-dirs infra/azure-aks-reference .

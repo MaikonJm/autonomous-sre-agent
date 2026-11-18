@@ -1,0 +1,9 @@
+# Exceções de segurança ACEITAS, com justificativa. Revisar se a arquitetura mudar.
+# Contexto: laboratório de 1 nó sem NAT Gateway (~US$ 32/mês). O nó sai direto pela internet
+# para SSM, Bedrock, pacotes e imagens. Nenhuma porta de ENTRADA está aberta (acesso só via SSM).
+
+# Subnet atribui IP público: necessário para saída sem NAT. Mitigação: SG sem ingress.
+AWS-0164
+# SG com egress irrestrito: destinos (SSM, Bedrock, registries) não têm faixa fixa de IP.
+# Produção: NAT + VPC endpoints (ssm, bedrock-runtime) e egress restrito.
+AWS-0104

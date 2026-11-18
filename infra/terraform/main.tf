@@ -44,7 +44,8 @@ resource "aws_internet_gateway" "this" {
   tags   = { Name = var.project }
 }
 
-resource "aws_subnet" "public" {
+# Exceção aceita (Semgrep/Trivy): IP público sem NAT Gateway. Nenhuma porta de entrada aberta (SG sem ingress).
+resource "aws_subnet" "public" { # nosemgrep: terraform.aws.security.aws-subnet-has-public-ip-address.aws-subnet-has-public-ip-address
   vpc_id                  = aws_vpc.this.id
   cidr_block              = "10.20.1.0/24"
   availability_zone       = sort(data.aws_ec2_instance_type_offerings.this.locations)[0]

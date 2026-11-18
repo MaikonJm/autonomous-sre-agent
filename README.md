@@ -80,7 +80,7 @@ terraform -chdir=infra/terraform destroy   # quando não precisar mais
 | `api-latency` | deploy com `FAULT_LATENCY_MS=600` | `OrdersApiHighLatency` | rollback ou remover a variável |
 | `bad-image` | tag de imagem inexistente | `OrdersApiPodsFailing` | rollback |
 
-Testes automatizados (sem nuvem, cluster simulado): `cd apps/sre-agent && pip install -r requirements.txt pytest && pytest -q`: 20 testes cobrindo os 5 cenários, retry, reversão, guardrails e a regressão do rollback. Rodam no CI junto com `terraform validate`, kubeconform, Semgrep (SAST) e Trivy.
+Testes automatizados (sem nuvem, cluster simulado): `cd apps/sre-agent && pip install -r requirements.txt pytest && pytest -q`: 20 testes cobrindo os 5 cenários, retry, reversão, guardrails e a regressão do rollback. Rodam no CI junto com `terraform validate`, kubeconform, Semgrep (SAST) e Trivy, todos como gate.
 
 ## Equivalências no Azure
 
@@ -116,4 +116,4 @@ O laboratório roda na AWS, mas cada peça tem par direto no Azure. O Terraform 
 - **Nova Micro (modelo pequeno):** barato e rápido; a qualidade vem dos sinais determinísticos, lição do projeto anterior ("o modelo não era o problema, a evidência era").
 - **Ações tipadas em vez de comandos livres:** perde flexibilidade, ganha auditabilidade e segurança.
 - **Alertas ajustados para demo** (janelas de 1 a 5 min). Produção: burn rate multi-janela de 1h/6h.
-- **Scanners em modo relatório no CI:** calibrar falsos positivos antes de transformar em gate.
+- **Segurança no CI como gate, depois de triagem:** os scanners rodaram em modo relatório, 9 achados foram triados (3 corrigidos, 2 exceções aceitas e justificadas em `.trivyignore`, 3 fora do escopo, no Terraform de referência do Azure) e então passaram a bloquear o merge.
