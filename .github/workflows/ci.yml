@@ -23,9 +23,12 @@ jobs:
       - run: cd apps/sre-agent && pytest -q
 
   terraform:
-    name: Terraform fmt + validate
+    name: Terraform fmt + validate (${{ matrix.dir }})
     runs-on: ubuntu-latest
-    defaults: { run: { working-directory: infra/terraform } }
+    strategy:
+      matrix:
+        dir: [infra/terraform, infra/operator-iam]
+    defaults: { run: { working-directory: "${{ matrix.dir }}" } }
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
