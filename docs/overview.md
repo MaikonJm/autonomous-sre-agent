@@ -14,6 +14,10 @@ Guia para se situar no projeto inteiro em 10 minutos. Ordem: do mais externo (nu
 | `user-data.sh.tftpl` | Primeiro boot: k3s, Docker, Helm, clone do repo, deploy | Um `terraform apply` e em ~10 min está tudo rodando. |
 | `variables.tf`, `outputs.tf` | Parâmetros (tipo de instância, repo, e-mail) e saídas (ID, comando de conexão) | |
 
+| `supply_chain.tf` | ECR (tags imutáveis, scan on push), signing profile do AWS Signer, role do GitHub Actions via OIDC, permissões do nó para baixar e verificar imagens, parâmetros SSM | Só roda imagem assinada pelo pipeline |
+
+`infra/operator-iam/`: grupo de operadores com menor privilégio e negações explícitas (sem porta de entrada, sem NAT, só tipos de instância aprovados).
+
 `infra/azure-aks-reference/`: a versão AKS (não aplicada), para mostrar o equivalente no Azure.
 
 ## 2. Dentro do cluster (k3s, Kubernetes de 1 nó)
@@ -21,7 +25,9 @@ Guia para se situar no projeto inteiro em 10 minutos. Ordem: do mais externo (nu
 | Namespace | O que roda | Arquivo |
 | --- | --- | --- |
 | `orders` | **orders-api** (2 réplicas): a aplicação "de negócio" que vai quebrar nos testes. Expõe `/metrics`. | `k8s/orders/orders-api.yaml` |
-| `orders` | **Regras de SLO e alertas** (PrometheusRule): taxa de erro, latência, pods falhando, 0 réplicas. Todo alerta leva `agent=sre`. | `k8s/orders/alerts.yaml` |
+| `orders` | **Regras de SLO e alertas** (PrometheusRule): taxa de erro, latência, pods falhando, 0 réplicas, cada um com runbook. Mais os alertas sobre o próprio agente. | `k8s/orders/alerts.yaml` |
+| `orders` | **NetworkPolicy**: nada entra, exceto o tráfego do `loadtest`, a coleta do Prometheus e as probes do nó | `k8s/orders/networkpolicy.yaml` |
+| `monitoring` | **Dashboards** "orders-api: SLO e golden signals" e "Agente SRE e LLM", carregados por ConfigMap | `k8s/observability/dashboards.yaml` (gerado por `build_dashboards.py`) |
 | `loadtest` | **loadgen**: ~10 req/s contra a API. Sem tráfego não há SLI e nenhum alerta dispara. | `k8s/loadtest/loadgen.yaml` |
 | `monitoring` | **Prometheus** (coleta e avalia regras), **Alertmanager** (roteia alertas `agent=sre` para o webhook do agente), **Grafana**, **kube-state-metrics** (estado dos pods e deployments). | `k8s/observability/values.yaml` |
 | `sre-agent` | **O agente**: Deployment, ServiceAccount, RBAC mínimo, ConfigMap com os guardrails. | `k8s/sre-agent/sre-agent.yaml` |
@@ -58,10 +64,15 @@ Fluxo de um alerta: `orders-api` gera erros → Prometheus calcula a taxa de err
 | `deploy-on-node.sh` | No nó | Build das imagens, Prometheus, app, agente, autoteste. Idempotente. |
 | `run_scenarios.py` | No nó | Injeta cada falha, mede MTTD e MTTR, coleta o relatório do agente, gera `reports/test-run-*.md` |
 | `node-forward.sh` | No nó | Publica agente, Grafana e Prometheus no localhost do nó, para os túneis |
+| `sync-code-to-node.sh` | Seu computador | Envia o código atual ao nó pelo SSM (o repositório é privado) |
+| `signature-demo.sh` | No nó | Imagem assinada pelo pipeline: válida. Imagem pública sem assinatura: rejeitada |
+| `netpol-demo.sh` | No nó | O mesmo teste de dois namespaces: `loadtest` permitido, `default` bloqueado |
 
 ## 5. CI: `.github/workflows/ci.yml`
 
-A cada push, tudo bloqueante: testes do agente, `terraform fmt` + `validate`, kubeconform, Semgrep (SAST) e Trivy (dependências e misconfig). Exceções aceitas ficam justificadas em `.trivyignore`.
+**`release.yml`** (a cada mudança em `apps/`): testes → build → push no ECR → `notation sign` com o AWS Signer → `notation verify`.
+
+**`ci.yml`**: a cada push, tudo bloqueante: testes do agente, `terraform fmt` + `validate`, kubeconform, Semgrep (SAST) e Trivy (dependências e misconfig). Exceções aceitas ficam justificadas em `.trivyignore`.
 
 ## 6. Onde olhar durante a demo
 
@@ -70,4 +81,4 @@ A cada push, tudo bloqueante: testes do agente, `terraform fmt` + `validate`, ku
 | `localhost:9090/alerts` | O alerta passando de `pending` para `firing` |
 | `localhost:8080` | O painel do agente: incidente, resultado, ação, MTTR, tokens |
 | `localhost:8080/reports/<id>` | O relatório completo (sinais, tentativas, política, SLIs antes e depois, linha do tempo, custo) |
-| `localhost:3000` | Grafana (dashboards padrão do Kubernetes) |
+| `localhost:3000` | Grafana: **orders-api: SLO e golden signals** (burn rate, latência, anotações de deploy e de ação do agente) e **Agente SRE e LLM** (resolvidos x escalados, MTTR, tokens, custo, latência do modelo) |

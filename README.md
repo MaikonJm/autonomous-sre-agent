@@ -17,6 +17,21 @@ Evolução do [aws-sre-ai-platform](https://github.com/MaikonJm/aws-sre-ai-platf
 
 **Infra na AWS:** VPC própria (1 subnet pública, sem NAT) · EC2 `c7i-flex.large` com k3s · **nenhuma porta aberta** (acesso só por SSM Session Manager) · IMDSv2 · disco criptografado · role com `bedrock:InvokeModel` em **um** modelo · budget com alertas por e-mail.
 
+## O que o projeto cobre (mapa da vaga)
+
+| Requisito | Onde ver funcionando |
+| --- | --- |
+| Cloud + IaC | `infra/terraform` (VPC, EC2, IAM, ECR, Signer, budget), aplicado de verdade; `infra/azure-aks-reference` para o Azure |
+| Kubernetes e Docker | k3s, Deployments com probes, `maxUnavailable: 0`, RBAC mínimo do agente, `readOnlyRootFilesystem` |
+| Rede e firewall | Security Group sem entrada; **NetworkPolicy** default-deny no namespace `orders` (`scripts/netpol-demo.sh`) |
+| SLI/SLO/MTTD/MTTR | Regras de gravação e alertas por burn rate (`k8s/orders/alerts.yaml`), MTTD e MTTR medidos por `run_scenarios.py` |
+| Observabilidade e dashboards | Grafana como código: **"orders-api: SLO e golden signals"** e **"Agente SRE e LLM"** (`k8s/observability/build_dashboards.py`) |
+| Incidentes e RCA | Agente autônomo + relatório por incidente + **runbook por alerta** (`docs/runbooks.md`) |
+| CI/CD com segurança | GitHub Actions: testes, Terraform, kubeconform, **gate de PromQL**, Semgrep (SAST) e Trivy como gate |
+| Assinatura de imagens com certificado | `release.yml`: build → ECR → **Notation + AWS Signer** → verify; o nó **bloqueia o deploy** se a assinatura for inválida (`scripts/signature-demo.sh`) |
+| Menor privilégio | Role do nó, role do GitHub via OIDC e grupo de operadores com negações explícitas (`infra/operator-iam`) |
+| IA, agentes e LLMs (diferencial) | O agente: catálogo fechado de ações, política em código, falha segura, custo e latência do LLM medidos |
+
 ## Guardrails
 
 | Risco | Controle |
@@ -107,12 +122,13 @@ O laboratório roda na AWS, mas cada peça tem par direto no Azure. O Terraform 
 | Deploy falhou no meio | `sudo /opt/lab/scripts/deploy-on-node.sh` (é idempotente). Log: `/var/log/sre-lab-deploy.log`. |
 | Alertas não disparam | Sem tráfego: `kubectl -n loadtest get pods`. Espere ~3 min após o deploy. |
 | Agente escalou em vez de agir | Leia o relatório: a política explica o motivo (é o comportamento seguro). |
-| Atualizar o código no nó | `cd /opt/lab && git pull && sudo ./scripts/deploy-on-node.sh` |
+| Atualizar o código no nó | No computador: `./scripts/sync-code-to-node.sh` (repositório privado, envia por SSM). No nó: `sudo /opt/lab/scripts/deploy-on-node.sh` |
+| Deploy bloqueado por assinatura | É o guardrail funcionando: a imagem não foi assinada pelo signing profile do projeto. Rode o workflow `release` e repita o deploy. |
 
 ## Decisões e trade-offs
 
 - **k3s numa EC2 em vez de EKS:** EKS cobra US$ 0,10/h só pelo control plane. Para um laboratório de uma pessoa, k3s dá o mesmo Kubernetes por uma fração. Produção: EKS com nós em 3 AZs.
-- **Imagens importadas no nó em vez de ECR:** sem registry nem pull secret para gerenciar. Produção: ECR com scan e imagens assinadas, build no CI.
+- **Verificação de assinatura no deploy, não por admission controller:** o nó roda `notation verify` antes de importar a imagem no k3s (sem pull secret, cabe em 4 GB). Produção: a mesma verificação como admission no cluster (Kyverno com o plugin do AWS Signer, ou Ratify), barrando qualquer pod com imagem não assinada.
 - **Nova Micro (modelo pequeno):** barato e rápido; a qualidade vem dos sinais determinísticos, lição do projeto anterior ("o modelo não era o problema, a evidência era").
 - **Ações tipadas em vez de comandos livres:** perde flexibilidade, ganha auditabilidade e segurança.
 - **Alertas ajustados para demo** (janelas de 1 a 5 min). Produção: burn rate multi-janela de 1h/6h.
