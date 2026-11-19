@@ -1,0 +1,1366 @@
+# GERADO por build_dashboards.py: edite o script, não este arquivo.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashboard-orders-api-slo
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  orders-api-slo.json: |
+    {
+      "uid": "orders-api-slo",
+      "title": "orders-api: SLO e golden signals",
+      "tags": [
+        "slo",
+        "orders"
+      ],
+      "timezone": "browser",
+      "refresh": "10s",
+      "time": {
+        "from": "now-30m",
+        "to": "now"
+      },
+      "schemaVersion": 39,
+      "editable": true,
+      "templating": {
+        "list": [
+          {
+            "name": "datasource",
+            "label": "Fonte",
+            "type": "datasource",
+            "query": "prometheus",
+            "current": {
+              "text": "Prometheus",
+              "value": "prometheus"
+            }
+          }
+        ]
+      },
+      "annotations": {
+        "list": [
+          {
+            "name": "Deploy / mudança no orders-api",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "enable": true,
+            "iconColor": "blue",
+            "expr": "changes(kube_deployment_status_observed_generation{namespace=\"orders\",deployment=\"orders-api\"}[1m]) > 0"
+          },
+          {
+            "name": "Ação do agente SRE",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "enable": true,
+            "iconColor": "purple",
+            "expr": "increase(sre_agent_actions_total{verdict=\"execute\"}[1m]) > 0"
+          },
+          {
+            "name": "Alerta disparado",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "enable": true,
+            "iconColor": "red",
+            "expr": "ALERTS{alertstate=\"firing\",agent=\"sre\"}"
+          }
+        ]
+      },
+      "panels": [
+        {
+          "type": "row",
+          "title": "SLO: 99,5% sem erro · p95 < 300 ms",
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 24,
+            "h": 1
+          },
+          "collapsed": false,
+          "panels": []
+        },
+        {
+          "type": "stat",
+          "title": "Disponibilidade (1h)",
+          "description": "Fração de requisições sem 5xx. SLO: 99,5%.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 1,
+            "w": 6,
+            "h": 4
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 0.99
+                  },
+                  {
+                    "color": "green",
+                    "value": 0.995
+                  }
+                ]
+              },
+              "decimals": 2
+            }
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "area",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "1 - ((sum(rate(http_requests_total{namespace=\"orders\",status=~\"5..\"}[1h])) or vector(0)) / sum(rate(http_requests_total{namespace=\"orders\"}[1h])))",
+              "legendFormat": "",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            }
+          ]
+        },
+        {
+          "type": "stat",
+          "title": "Burn rate (5m)",
+          "description": "Velocidade de consumo do error budget. 1x = sustentável; 14,4x = acaba em ~2 dias (alerta).",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 6,
+            "y": 1,
+            "w": 6,
+            "h": 4
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "x",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 14.4
+                  }
+                ]
+              },
+              "decimals": 1
+            }
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "area",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "orders_api:error_ratio:rate5m / 0.005",
+              "legendFormat": "",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            }
+          ]
+        },
+        {
+          "type": "stat",
+          "title": "Latência p95 (2m)",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 1,
+            "w": 6,
+            "h": 4
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 0.2
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.3
+                  }
+                ]
+              },
+              "decimals": 3
+            }
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "area",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "orders_api:p95_latency:rate2m",
+              "legendFormat": "",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            }
+          ]
+        },
+        {
+          "type": "stat",
+          "title": "Alertas ativos",
+          "description": "Alertas de SLO disparados agora.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 18,
+            "y": 1,
+            "w": 6,
+            "h": 4
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              }
+            }
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "area",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "count(ALERTS{alertstate=\"firing\",agent=\"sre\"}) or vector(0)",
+              "legendFormat": "",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            }
+          ]
+        },
+        {
+          "type": "row",
+          "title": "Golden signals",
+          "gridPos": {
+            "x": 0,
+            "y": 5,
+            "w": 24,
+            "h": 1
+          },
+          "collapsed": false,
+          "panels": []
+        },
+        {
+          "type": "timeseries",
+          "title": "Tráfego (req/s por rota e status)",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 6,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (route, status) (rate(http_requests_total{namespace=\"orders\"}[1m]))",
+              "legendFormat": "{{route}} {{status}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Erros: taxa de 5xx (limiar do alerta: 7,2%)",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 6,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "thresholdsStyle": {
+                  "mode": "dashed"
+                }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.072
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "orders_api:error_ratio:rate1m",
+              "legendFormat": "janela 1m (verificação)",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            },
+            {
+              "refId": "B",
+              "expr": "orders_api:error_ratio:rate5m",
+              "legendFormat": "janela 5m (alerta)",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Latência p50 / p95 / p99 (SLO: p95 < 300 ms)",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 14,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "thresholdsStyle": {
+                  "mode": "dashed"
+                }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.3
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.5, sum by (le) (rate(http_request_duration_seconds_bucket{namespace=\"orders\"}[2m])))",
+              "legendFormat": "p50",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            },
+            {
+              "refId": "B",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{namespace=\"orders\"}[2m])))",
+              "legendFormat": "p95",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            },
+            {
+              "refId": "C",
+              "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{namespace=\"orders\"}[2m])))",
+              "legendFormat": "p99",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Saturação: CPU e memória por pod",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 14,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"orders\",container=\"app\"}[2m]))",
+              "legendFormat": "CPU {{pod}} (cores)",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            },
+            {
+              "refId": "B",
+              "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"orders\",container=\"app\"}) / 1024 / 1024",
+              "legendFormat": "Mem {{pod}} (MiB)",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            }
+          ]
+        },
+        {
+          "type": "row",
+          "title": "Kubernetes",
+          "gridPos": {
+            "x": 0,
+            "y": 22,
+            "w": 24,
+            "h": 1
+          },
+          "collapsed": false,
+          "panels": []
+        },
+        {
+          "type": "timeseries",
+          "title": "Réplicas: desejadas x disponíveis",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 23,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "kube_deployment_spec_replicas{namespace=\"orders\",deployment=\"orders-api\"}",
+              "legendFormat": "desejadas",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            },
+            {
+              "refId": "B",
+              "expr": "kube_deployment_status_replicas_available{namespace=\"orders\",deployment=\"orders-api\"}",
+              "legendFormat": "disponíveis",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Pods com problema (CrashLoop, ImagePull, OOM)",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 23,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (reason) (kube_pod_container_status_waiting_reason{namespace=\"orders\"})",
+              "legendFormat": "aguardando: {{reason}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            },
+            {
+              "refId": "B",
+              "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=\"orders\"}[5m]))",
+              "legendFormat": "restarts (5m)",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            }
+          ]
+        }
+      ]
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashboard-sre-agent-llm
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  sre-agent-llm.json: |
+    {
+      "uid": "sre-agent-llm",
+      "title": "Agente SRE e LLM",
+      "tags": [
+        "agente",
+        "llm"
+      ],
+      "timezone": "browser",
+      "refresh": "10s",
+      "time": {
+        "from": "now-30m",
+        "to": "now"
+      },
+      "schemaVersion": 39,
+      "editable": true,
+      "templating": {
+        "list": [
+          {
+            "name": "datasource",
+            "label": "Fonte",
+            "type": "datasource",
+            "query": "prometheus",
+            "current": {
+              "text": "Prometheus",
+              "value": "prometheus"
+            }
+          }
+        ]
+      },
+      "annotations": {
+        "list": [
+          {
+            "name": "Ação do agente SRE",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "enable": true,
+            "iconColor": "purple",
+            "expr": "increase(sre_agent_actions_total{verdict=\"execute\"}[1m]) > 0"
+          },
+          {
+            "name": "Alerta disparado",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "enable": true,
+            "iconColor": "red",
+            "expr": "ALERTS{alertstate=\"firing\",agent=\"sre\"}"
+          }
+        ]
+      },
+      "panels": [
+        {
+          "type": "row",
+          "title": "Resultado do agente",
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 24,
+            "h": 1
+          },
+          "collapsed": false,
+          "panels": []
+        },
+        {
+          "type": "stat",
+          "title": "Resolvidos sozinho (24h)",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 1,
+            "w": 6,
+            "h": 4
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              },
+              "decimals": 0
+            }
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "area",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(increase(sre_agent_incidents_total{outcome=\"resolved\"}[24h]))",
+              "legendFormat": "",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            }
+          ]
+        },
+        {
+          "type": "stat",
+          "title": "Escalados a humano (24h)",
+          "description": "Não é falha: é a política sendo conservadora. Cada um tem relatório no painel do agente.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 4,
+            "y": 1,
+            "w": 5,
+            "h": 4
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 1
+                  }
+                ]
+              },
+              "decimals": 0
+            }
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "area",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(increase(sre_agent_incidents_total{outcome=~\"escalated|approval_required\"}[24h]))",
+              "legendFormat": "",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            }
+          ]
+        },
+        {
+          "type": "stat",
+          "title": "MTTR mediano",
+          "description": "Do início do alerta até a correção verificada.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 9,
+            "y": 1,
+            "w": 5,
+            "h": 4
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 300
+                  },
+                  {
+                    "color": "red",
+                    "value": 900
+                  }
+                ]
+              },
+              "decimals": 0
+            }
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "area",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.5, sum by (le) (rate(sre_agent_mttr_seconds_bucket[24h])))",
+              "legendFormat": "",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            }
+          ]
+        },
+        {
+          "type": "stat",
+          "title": "Custo de LLM (acumulado)",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 14,
+            "y": 1,
+            "w": 5,
+            "h": 4
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "currencyUSD",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 1
+                  }
+                ]
+              },
+              "decimals": 5
+            }
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "area",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(sre_agent_llm_cost_usd_total)",
+              "legendFormat": "",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            }
+          ]
+        },
+        {
+          "type": "stat",
+          "title": "Agente no ar",
+          "description": "Quem vigia o vigia: se cair, o alerta SreAgentDown vai para humanos.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 19,
+            "y": 1,
+            "w": 5,
+            "h": 4
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              }
+            }
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "area",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "max(up{job=\"sre-agent\"}) or vector(0)",
+              "legendFormat": "",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            }
+          ]
+        },
+        {
+          "type": "row",
+          "title": "Decisões",
+          "gridPos": {
+            "x": 0,
+            "y": 5,
+            "w": 24,
+            "h": 1
+          },
+          "collapsed": false,
+          "panels": []
+        },
+        {
+          "type": "timeseries",
+          "title": "Incidentes por resultado",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 6,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "custom": {
+                "fillOpacity": 60,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "normal"
+                },
+                "drawStyle": "bars"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (outcome) (increase(sre_agent_incidents_total[5m]))",
+              "legendFormat": "{{outcome}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Ações por tipo e veredito da política",
+          "description": "execute = rodou sozinho; approval_required / escalate = a política barrou.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 6,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "custom": {
+                "fillOpacity": 60,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "normal"
+                },
+                "drawStyle": "bars"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (type, verdict) (increase(sre_agent_actions_total[5m]))",
+              "legendFormat": "{{type}} → {{verdict}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            }
+          ]
+        },
+        {
+          "type": "row",
+          "title": "LLM (Amazon Bedrock · Nova Micro)",
+          "gridPos": {
+            "x": 0,
+            "y": 14,
+            "w": 24,
+            "h": 1
+          },
+          "collapsed": false,
+          "panels": []
+        },
+        {
+          "type": "timeseries",
+          "title": "Latência do LLM p50 / p95",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 15,
+            "w": 8,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.5, sum by (le) (rate(sre_agent_llm_latency_seconds_bucket[30m])))",
+              "legendFormat": "p50",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            },
+            {
+              "refId": "B",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(sre_agent_llm_latency_seconds_bucket[30m])))",
+              "legendFormat": "p95",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Tokens por minuto",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 8,
+            "y": 15,
+            "w": 8,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (direction) (rate(sre_agent_llm_tokens_total[5m])) * 60",
+              "legendFormat": "{{direction}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Chamadas ao LLM: ok x erro",
+          "description": "Erro aqui = falha segura: o agente escala em vez de agir.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 16,
+            "y": 15,
+            "w": 8,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "custom": {
+                "fillOpacity": 60,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "normal"
+                },
+                "drawStyle": "bars"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (outcome) (increase(sre_agent_llm_calls_total[5m]))",
+              "legendFormat": "{{outcome}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Duração do tratamento (p50 / p95)",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 23,
+            "w": 24,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.5, sum by (le) (rate(sre_agent_incident_seconds_bucket[30m])))",
+              "legendFormat": "p50",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            },
+            {
+              "refId": "B",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(sre_agent_incident_seconds_bucket[30m])))",
+              "legendFormat": "p95",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            }
+          ]
+        }
+      ]
+    }

@@ -24,10 +24,12 @@ helm repo add prometheus-community https://prometheus-community.github.io/helm-c
 helm repo update >/dev/null
 helm upgrade --install kps prometheus-community/kube-prometheus-stack -n monitoring --create-namespace \
   -f k8s/observability/values.yaml --wait --timeout 15m
+kubectl apply -f k8s/observability/dashboards.yaml     # dashboards como código (sidecar do Grafana)
 
 echo "==> 3/4 Aplicação, alertas e tráfego"
 sed "s#ORDERS_API_IMAGE#orders-api:$TAG#" k8s/orders/orders-api.yaml | kubectl apply -f -
 kubectl apply -f k8s/orders/alerts.yaml
+kubectl apply -f k8s/orders/networkpolicy.yaml          # firewall entre serviços
 sed "s#ORDERS_API_IMAGE#orders-api:$TAG#" k8s/loadtest/loadgen.yaml | kubectl apply -f -
 kubectl -n orders rollout status deploy/orders-api --timeout=300s
 

@@ -196,3 +196,22 @@ def test_policy_blocks_rollback_into_known_bad_revision_even_if_llm_insists():
     inc = runner.run(ALERT)
     assert inc["outcome"] == "escalated"
     assert "FAULT_ERROR_RATE" not in cluster.template["env"]
+
+
+def test_attempt_records_llm_usage_and_runbook_in_report():
+    cluster, runner = make()
+    cluster.apply_template(env={"FAULT_ERROR_RATE": "0.5"})
+    alert = ALERT | {"annotations": {"summary": "erro alto", "runbook_url": "https://x/runbook.md"}}
+    inc = runner.run(alert)
+    assert inc["attempts"][0]["llm_ok"] is True
+    assert inc["attempts"][0]["usage"]["latency_seconds"] == 0.8
+    assert "Runbook:** https://x/runbook.md" in report.render_markdown(inc)
+
+
+def test_metrics_endpoint_exposes_llm_metrics():
+    from fastapi.testclient import TestClient
+    from agent import main
+    body = TestClient(main.app).get("/metrics").text
+    for name in ("sre_agent_llm_latency_seconds", "sre_agent_llm_cost_usd_total", "sre_agent_mttr_seconds",
+                 'sre_agent_llm_calls_total{outcome="error"}'):
+        assert name in body

@@ -40,6 +40,7 @@ def render_markdown(inc: dict) -> str:
         "",
         "## Resumo",
         f"- **Alerta:** `{inc['alertname']}`: {a.get('annotations', {}).get('summary', '')}",
+        *([f"- **Runbook:** {a['annotations']['runbook_url']}"] if a.get("annotations", {}).get("runbook_url") else []),
         f"- **Diagnóstico:** {plan.get('summary', '')}",
         f"- **Causa raiz provável:** {plan.get('root_cause', '')}",
         f"- **Confiança:** {plan.get('confidence', '')}",

@@ -21,6 +21,19 @@ INCIDENTS = Counter("sre_agent_incidents_total", "Incidentes tratados", ["alertn
 ACTIONS = Counter("sre_agent_actions_total", "Ações decididas pela política", ["type", "verdict"])
 TOKENS = Counter("sre_agent_llm_tokens_total", "Tokens do LLM", ["direction"])
 DURATION = Histogram("sre_agent_incident_seconds", "Duração do tratamento", buckets=(30, 60, 120, 180, 300, 600))
+LLM_LATENCY = Histogram("sre_agent_llm_latency_seconds", "Latência de cada chamada ao LLM",
+                        buckets=(0.25, 0.5, 1, 2, 4, 8, 16))
+LLM_CALLS = Counter("sre_agent_llm_calls_total", "Chamadas ao LLM", ["outcome"])
+LLM_COST = Counter("sre_agent_llm_cost_usd_total", "Custo estimado do LLM em US$")
+MTTR = Histogram("sre_agent_mttr_seconds", "Do início do alerta até a correção verificada",
+                 buckets=(30, 60, 90, 120, 180, 300, 600, 1200))
+
+for _o in ("resolved", "escalated", "approval_required", "dry_run"):
+    INCIDENTS.labels("-", _o)
+for _o in ("ok", "error"):
+    LLM_CALLS.labels(_o)
+for _d in ("input", "output"):
+    TOKENS.labels(_d)
 
 settings = Settings()
 app = FastAPI(title="Agente SRE autônomo")
@@ -57,8 +70,14 @@ def handle(alert: dict) -> None:
         DURATION.observe(inc["agent_seconds"])
         TOKENS.labels("input").inc(inc["usage"]["inputTokens"])
         TOKENS.labels("output").inc(inc["usage"]["outputTokens"])
+        LLM_COST.inc(inc["usage"]["cost_usd"])
+        if inc.get("mttr_seconds") is not None:
+            MTTR.observe(inc["mttr_seconds"])
         for at in inc["attempts"]:
             ACTIONS.labels(at["plan"]["action"].get("type", "?"), at["decision"]["verdict"]).inc()
+            LLM_CALLS.labels("ok" if at.get("llm_ok") else "error").inc()
+            if at.get("usage", {}).get("latency_seconds"):
+                LLM_LATENCY.observe(at["usage"]["latency_seconds"])
         log.info("incidente %s: %s", inc["id"], inc["outcome"])
     except Exception:
         log.exception("falha no tratamento do incidente")

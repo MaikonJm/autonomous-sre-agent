@@ -1,0 +1,37 @@
+# Firewall entre serviços (zero trust dentro do cluster): no namespace orders, NADA entra
+# a não ser o que está liberado explicitamente. O k3s aplica NetworkPolicy nativamente.
+# Demonstração: scripts/netpol-demo.sh
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: orders
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: orders-api-allowed-clients
+  namespace: orders
+spec:
+  podSelector:
+    matchLabels: { app: orders-api }
+  policyTypes: ["Ingress"]
+  ingress:
+    # quem consome a API: o gerador de tráfego
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: loadtest }
+      ports: [{ port: 8080, protocol: TCP }]
+    # quem coleta métricas: o Prometheus
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: monitoring }
+      ports: [{ port: 8080, protocol: TCP }]
+    # o próprio nó: probes de saúde do kubelet (gateway da rede de pods e IP da VPC)
+    - from:
+        - ipBlock: { cidr: 10.42.0.1/32 }
+        - ipBlock: { cidr: 10.20.0.0/16 }
+      ports: [{ port: 8080, protocol: TCP }]

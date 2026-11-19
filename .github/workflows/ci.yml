@@ -40,12 +40,26 @@ jobs:
       - uses: actions/checkout@v4
       - run: |
           curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
-          for f in k8s/orders/*.yaml k8s/loadtest/*.yaml k8s/sre-agent/*.yaml; do
+          for f in k8s/orders/*.yaml k8s/loadtest/*.yaml k8s/sre-agent/*.yaml k8s/observability/dashboards.yaml; do
             sed 's#ORDERS_API_IMAGE#x/y:z#;s#SRE_AGENT_IMAGE#x/a:b#' "$f" > /tmp/m.yaml
             ./kubeconform -strict -summary -kubernetes-version 1.31.0 \
               -schema-location default \
               -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' /tmp/m.yaml
           done
+
+  promql:
+    name: PromQL válido (alertas, dashboards, agente)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install promql-parser pyyaml
+      - name: Dashboards gerados estão em dia com o script
+        run: |
+          python3 k8s/observability/build_dashboards.py
+          git diff --exit-code k8s/observability/dashboards.yaml
+      - run: python3 scripts/ci/check_promql.py
 
   security:
     name: Segurança (SAST + IaC + dependências)

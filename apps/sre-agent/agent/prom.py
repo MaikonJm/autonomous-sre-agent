@@ -4,7 +4,7 @@ import httpx
 
 SLI_QUERIES = {
     # janelas curtas: o agente precisa ver a melhora em ~1 min depois da ação
-    "error_ratio_1m": 'sum(rate(http_requests_total{namespace="orders",status=~"5.."}[1m])) / sum(rate(http_requests_total{namespace="orders"}[1m]))',
+    "error_ratio_1m": '(sum(rate(http_requests_total{namespace="orders",status=~"5.."}[1m])) or vector(0)) / sum(rate(http_requests_total{namespace="orders"}[1m]))',
     "error_ratio_5m": "orders_api:error_ratio:rate5m",
     "p95_latency_1m": 'histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{namespace="orders"}[1m])))',
     "requests_per_second": 'sum(rate(http_requests_total{namespace="orders"}[1m]))',

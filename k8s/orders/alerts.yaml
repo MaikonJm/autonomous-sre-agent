@@ -13,9 +13,10 @@ spec:
       interval: 15s
       rules:
         - record: orders_api:error_ratio:rate1m
-          expr: sum(rate(http_requests_total{namespace="orders",status=~"5.."}[1m])) / sum(rate(http_requests_total{namespace="orders"}[1m]))
+          # "or vector(0)": sem nenhum 5xx a série some; assim o SLI vira 0 em vez de "sem dados"
+          expr: (sum(rate(http_requests_total{namespace="orders",status=~"5.."}[1m])) or vector(0)) / sum(rate(http_requests_total{namespace="orders"}[1m]))
         - record: orders_api:error_ratio:rate5m
-          expr: sum(rate(http_requests_total{namespace="orders",status=~"5.."}[5m])) / sum(rate(http_requests_total{namespace="orders"}[5m]))
+          expr: (sum(rate(http_requests_total{namespace="orders",status=~"5.."}[5m])) or vector(0)) / sum(rate(http_requests_total{namespace="orders"}[5m]))
         - record: orders_api:p95_latency:rate2m
           expr: histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{namespace="orders"}[2m])))
     - name: orders-api.alerts
@@ -28,21 +29,49 @@ spec:
           labels: { severity: critical, agent: sre, namespace: orders }
           annotations:
             summary: "orders-api com {{ $value | humanizePercentage }} de erros (SLO 99,5%)"
+            runbook_url: "https://github.com/MaikonJm/autonomous-sre-agent/blob/main/docs/runbooks.md#ordersapihigherrorrate"
         - alert: OrdersApiHighLatency
           expr: orders_api:p95_latency:rate2m > 0.3
           for: 1m
           labels: { severity: critical, agent: sre, namespace: orders }
           annotations:
             summary: "p95 do orders-api em {{ $value | humanizeDuration }} (SLO 300 ms)"
+            runbook_url: "https://github.com/MaikonJm/autonomous-sre-agent/blob/main/docs/runbooks.md#ordersapihighlatency"
         - alert: OrdersApiPodsFailing
           expr: max(kube_pod_container_status_waiting_reason{namespace="orders",reason=~"CrashLoopBackOff|ImagePullBackOff|ErrImagePull|CreateContainerConfigError"}) > 0
           for: 1m
           labels: { severity: warning, agent: sre, namespace: orders }
           annotations:
             summary: "Pods do namespace orders não sobem (CrashLoop/ImagePull)"
+            runbook_url: "https://github.com/MaikonJm/autonomous-sre-agent/blob/main/docs/runbooks.md#ordersapipodsfailing"
         - alert: OrdersApiNoReplicas
           expr: kube_deployment_spec_replicas{namespace="orders",deployment="orders-api"} == 0
           for: 1m
           labels: { severity: critical, agent: sre, namespace: orders }
           annotations:
             summary: "orders-api está com 0 réplicas: serviço fora do ar"
+            runbook_url: "https://github.com/MaikonJm/autonomous-sre-agent/blob/main/docs/runbooks.md#ordersapinoreplicas"
+    # Quem vigia o vigia: alertas sobre o PRÓPRIO agente. Sem o label agent=sre, então
+    # NÃO são enviados ao agente (ele não pode consertar a si mesmo): vão para humanos.
+    - name: sre-agent.self-monitoring
+      interval: 30s
+      rules:
+        - alert: SreAgentDown
+          expr: absent(up{job="sre-agent"} == 1)
+          for: 2m
+          labels: { severity: critical, namespace: sre-agent }
+          annotations:
+            summary: "O agente SRE não está respondendo: incidentes voltam a depender só de humanos"
+            runbook_url: "https://github.com/MaikonJm/autonomous-sre-agent/blob/main/docs/runbooks.md#sreagentdown"
+        - alert: SreAgentLlmErrors
+          expr: increase(sre_agent_llm_calls_total{outcome="error"}[15m]) > 0
+          labels: { severity: warning, namespace: sre-agent }
+          annotations:
+            summary: "Chamadas ao LLM falhando: o agente está escalando tudo para humanos"
+            runbook_url: "https://github.com/MaikonJm/autonomous-sre-agent/blob/main/docs/runbooks.md#sreagentllmerrors"
+        - alert: SreAgentEscalating
+          expr: increase(sre_agent_incidents_total{outcome=~"escalated|approval_required"}[30m]) > 0
+          labels: { severity: warning, namespace: sre-agent }
+          annotations:
+            summary: "O agente escalou um incidente: alguém precisa ler o relatório"
+            runbook_url: "https://github.com/MaikonJm/autonomous-sre-agent/blob/main/docs/runbooks.md#sreagentescalating"

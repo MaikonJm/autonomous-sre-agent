@@ -132,7 +132,9 @@ class IncidentRunner:
 
             decision = self.policy.evaluate(plan, evidence, inc["attempts"])
             attempt = {"n": n, "signals": signals, "slis_before": evidence["slis"], "plan": plan,
-                       "decision": {"verdict": decision.verdict, "reasons": decision.reasons}}
+                       "decision": {"verdict": decision.verdict, "reasons": decision.reasons},
+                       "usage": {k: usage.get(k) for k in ("inputTokens", "outputTokens", "latency_seconds")},
+                       "llm_ok": bool(usage)}
             inc["attempts"].append(attempt)
             mark(f"política: {decision.verdict} ({'; '.join(decision.reasons)})")
 
