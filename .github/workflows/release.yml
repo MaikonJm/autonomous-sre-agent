@@ -1,0 +1,95 @@
+# Release: build -> push no ECR -> ASSINATURA (Notation + AWS Signer) -> verificação.
+# O nó só faz deploy de imagem com assinatura válida deste signing profile (scripts/deploy-on-node.sh).
+#
+# Pré-requisito (uma vez): variáveis do repositório no GitHub (Settings > Secrets and variables > Actions > Variables)
+#   AWS_RELEASE_ROLE_ARN  = terraform output github_release_role_arn
+#   SIGNING_PROFILE_ARN   = terraform output signing_profile_arn
+# Sem elas o job é pulado (o laboratório continua funcionando com build local no nó).
+name: release
+
+on:
+  push:
+    branches: [main]
+    paths: ["apps/**", ".github/workflows/release.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write   # token OIDC trocado por credencial AWS temporária: nenhuma chave guardada no GitHub
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  REPO_PREFIX: autonomous-sre-agent
+
+jobs:
+  release:
+    if: vars.AWS_RELEASE_ROLE_ARN != '' && vars.SIGNING_PROFILE_ARN != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Testes antes de publicar
+        run: |
+          pip install -q -r apps/sre-agent/requirements.txt pytest
+          cd apps/sre-agent && pytest -q
+
+      - name: Credenciais AWS via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_RELEASE_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login no ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Instalar Notation + plugin do AWS Signer
+        run: |
+          curl -sSLo /tmp/signer.deb https://d2hvyiie56hcat.cloudfront.net/linux/amd64/installer/deb/latest/aws-signer-notation-cli_amd64.deb
+          sudo dpkg -i -E /tmp/signer.deb
+          notation version
+          notation plugin ls
+          notation cert ls | grep -q aws-signer-ts || {
+            curl -sSLo /tmp/root.cert https://d2hvyiie56hcat.cloudfront.net/aws-signer-notation-root.cert
+            notation cert add --type signingAuthority --store aws-signer-ts /tmp/root.cert
+          }
+          notation cert ls
+
+      - name: Build, push e assinatura (por digest, nunca por tag)
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          PROFILE: ${{ vars.SIGNING_PROFILE_ARN }}
+        run: |
+          aws ecr get-login-password --region "$AWS_REGION" | notation login --username AWS --password-stdin "$REGISTRY"
+          TAG="${GITHUB_SHA::12}"
+          for app in orders-api sre-agent; do
+            REPO="$REGISTRY/$REPO_PREFIX/$app"
+            docker build --build-arg APP_VERSION="$TAG" -t "$REPO:$TAG" "apps/$app"
+            docker push "$REPO:$TAG"
+            DIGEST=$(aws ecr describe-images --repository-name "$REPO_PREFIX/$app" --image-ids imageTag="$TAG" \
+                       --query 'imageDetails[0].imageDigest' --output text)
+            notation sign "$REPO@$DIGEST" --plugin com.amazonaws.signer.notation.plugin --id "$PROFILE"
+            echo "$app $REPO@$DIGEST" >> /tmp/signed.txt
+          done
+
+      - name: Verificar assinaturas (o mesmo que o nó faz antes do deploy)
+        env:
+          PROFILE: ${{ vars.SIGNING_PROFILE_ARN }}
+        run: |
+          cat > /tmp/trustpolicy.json <<EOF
+          {"version":"1.0","trustPolicies":[{"name":"autonomous-sre-agent","registryScopes":["*"],
+            "signatureVerification":{"level":"strict"},"trustStores":["signingAuthority:aws-signer-ts"],
+            "trustedIdentities":["$PROFILE"]}]}
+          EOF
+          notation policy import --force /tmp/trustpolicy.json
+          while read -r app ref; do notation verify "$ref"; done < /tmp/signed.txt
+          {
+            echo "### Imagens publicadas e assinadas"
+            echo '| App | Referência (digest) |'
+            echo '| --- | --- |'
+            while read -r app ref; do echo "| $app | \`$ref\` |"; done < /tmp/signed.txt
+          } >> "$GITHUB_STEP_SUMMARY"
