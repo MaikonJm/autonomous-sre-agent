@@ -4,7 +4,10 @@ Responda sempre em **português do Brasil**. O dono do projeto é o Maikon, que 
 
 Este repositório é a demo da entrevista: um agente SRE autônomo com guardrails num k3s numa EC2, usando Amazon Bedrock (Nova Micro). Leia `README.md`, `docs/overview.md` e `docs/runbooks.md` antes de agir.
 
-## Estado atual
+## Estado atual (domingo, 22/11)
+
+- **Novo:** o agente virou um **time de agentes** (Investigador, Diagnosticador, Revisor de segurança, Executor, Verificador, Documentador). Ligado por `ENABLE_REVIEWER` e `ENABLE_SCRIBE` no ConfigMap; com `"false"` volta ao agente único.
+- As melhorias de quinta (dashboards, assinatura de imagens, NetworkPolicy, runbooks) **ainda não foram aplicadas na AWS**.
 
 - A infra principal (`infra/terraform`) **já existe** na AWS e a EC2 fica **parada** entre sessões. O state é local em `infra/terraform/`.
 - O lab já rodou os 5 cenários: 5 de 5 resolvidos (relatório em `reports/`, que não é versionado).
@@ -27,6 +30,8 @@ Cada passo: mostre o resultado em poucas linhas e espere o "ok" antes dos que ge
    - `/opt/lab/scripts/netpol-demo.sh`: loadtest **PERMITIDO**, default **BLOQUEADO**. Se o orders-api ficar não-pronto depois da NetworkPolicy, as probes estão sendo bloqueadas: diagnostique antes de remover qualquer coisa.
    - Dashboards: peça ao Maikon para rodar `/opt/lab/scripts/node-forward.sh` no nó (sessão `lab.sh connect`) e `./scripts/lab.sh tunnels` no computador. No Grafana (http://localhost:3000, admin/admin) devem aparecer "orders-api: SLO e golden signals" e "Agente SRE e LLM".
    - Rode um cenário (`python3 scripts/run_scenarios.py api-errors`) e confira se o dashboard do agente mostra tokens, custo e a anotação da ação.
+   - **Time de agentes:** no relatório do incidente (painel :8080 → ID) devem aparecer "Conversa entre os agentes", o veredito do Revisor e o "Postmortem (escrito pelo agente Documentador)". Se o Revisor rejeitar planos corretos (Nova Micro conservador demais), mostre o motivo; a saída rápida é `ENABLE_REVIEWER: "false"` no ConfigMap + `kubectl -n sre-agent rollout restart deploy/sre-agent`.
+   - Rode a suíte completa (`python3 scripts/run_scenarios.py`, ~20 min) e traga o resumo: resolvidos, MTTD, MTTR, custo total e vereditos do Revisor.
 6. **IAM de menor privilégio** (só depois de tudo acima funcionar): `infra/operator-iam` → `terraform init` + `plan` + `apply` (confirmar). Depois o Maikon remove a AdministratorAccess do `maikon-cli` no console. Valide com `terraform plan` na stack principal, `./scripts/lab.sh status` e um `send-command` simples. Se algo for negado, mostre a ação exata e proponha a correção mínima na policy. Se travar, o Maikon reanexa a AdministratorAccess e seguimos.
 7. **Desligar:** `./scripts/lab.sh stop` (confirmar).
 

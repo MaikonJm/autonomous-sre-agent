@@ -1,19 +1,21 @@
-# Autonomous SRE Agent: um agente de IA que resolve incidentes sozinho, com guardrails
+# Autonomous SRE Agent: um time de agentes de IA que resolve incidentes sozinho, com guardrails
 
 Evolução do [aws-sre-ai-platform](https://github.com/MaikonJm/aws-sre-ai-platform). Lá, o agente **diagnosticava** e um humano aplicava a correção. Aqui ele **fecha o ciclo**: diagnostica, escolhe uma ação, executa, verifica se o SLO voltou, tenta de novo ou desfaz se piorar, e escreve o relatório. Tudo dentro de guardrails escritos em código, não em prompt.
 
 ```
- falha ─▶ Prometheus (SLO) ─▶ Alertmanager ─webhook─▶ Agente SRE (pod no k3s)
-                                                          │
-  1. Evidências (só leitura): deployments, revisões, pods, eventos, logs, SLIs
-  2. Sinais determinísticos (código): "o que mudou?", OOMKilled, CrashLoop, 0 réplicas
-  3. Plano (LLM: Amazon Bedrock Nova Micro, credencial temporária da role do nó)
-       └─ UMA ação tipada: rollback | remove_env | scale | set_memory_limit | restart | escalate
-  4. Política (código): execute | approval_required | escalate | dry_run
-  5. Ação (snapshot antes) ─▶ 6. Verificação (rollout + SLIs de 1 min)
-       ok ─▶ RESOLVIDO   piorou ─▶ restaura snapshot   não resolveu ─▶ 2ª tentativa ─▶ escala
-  7. Relatório: painel web, Markdown, issue no GitHub (opcional), métricas do próprio agente
+ falha ─▶ Prometheus (SLO) ─▶ Alertmanager ─webhook─▶ ORQUESTRADOR (pod no k3s)
+                                                          │  um caso, passado de especialista em especialista
+  INVESTIGADOR   (código)  evidências + sinais determinísticos: "o que mudou?", OOMKilled, CrashLoop, 0 réplicas
+  DIAGNOSTICADOR (LLM)     causa raiz + UMA ação tipada: rollback | remove_env | scale | set_memory_limit | restart | escalate
+  REVISOR        (LLM)     segunda opinião: aprova ou rejeita (só pode deixar MAIS conservador)
+  POLÍTICA       (código)  decisão final: execute | approval_required | escalate | dry_run
+  EXECUTOR       (código)  aplica a ação com snapshot antes
+  VERIFICADOR    (código)  rollout + SLIs de 1 min: ok ─▶ resolvido · piorou ─▶ restaura · não resolveu ─▶ 2ª tentativa ─▶ escala
+  DOCUMENTADOR   (LLM)     postmortem blameless em português: 5 porquês e ações de prevenção
+  ─▶ relatório com a conversa entre os agentes · painel web · issue no GitHub (opcional) · métricas por agente
 ```
+
+**Por que um time e não um agente só?** Cada agente tem um papel estreito, um prompt curto e uma saída verificável. Os agentes de LLM nunca ampliam o que pode ser feito: o Revisor só consegue barrar, e quem libera a execução é sempre a política em código. É o mesmo princípio de "quatro olhos" de uma mudança em produção, aplicado a agentes.
 
 **Infra na AWS:** VPC própria (1 subnet pública, sem NAT) · EC2 `c7i-flex.large` com k3s · **nenhuma porta aberta** (acesso só por SSM Session Manager) · IMDSv2 · disco criptografado · role com `bedrock:InvokeModel` em **um** modelo · budget com alertas por e-mail.
 
@@ -30,12 +32,13 @@ Evolução do [aws-sre-ai-platform](https://github.com/MaikonJm/aws-sre-ai-platf
 | CI/CD com segurança | GitHub Actions: testes, Terraform, kubeconform, **gate de PromQL**, Semgrep (SAST) e Trivy como gate |
 | Assinatura de imagens com certificado | `release.yml`: build → ECR → **Notation + AWS Signer** → verify; o nó **bloqueia o deploy** se a assinatura for inválida (`scripts/signature-demo.sh`) |
 | Menor privilégio | Role do nó, role do GitHub via OIDC e grupo de operadores com negações explícitas (`infra/operator-iam`) |
-| IA, agentes e LLMs (diferencial) | O agente: catálogo fechado de ações, política em código, falha segura, custo e latência do LLM medidos |
+| IA, agentes e LLMs (diferencial) | **Time de agentes** (Investigador, Diagnosticador, Revisor, Executor, Verificador, Documentador) com papéis, veto e conversa auditável; custo, tokens e latência **por agente** no Grafana |
 
 ## Guardrails
 
 | Risco | Controle |
 | --- | --- |
+| Um LLM convence o outro | Os agentes não negociam: o Revisor só tem poder de **veto**; aprovar não libera nada que a política barre. Se o Revisor cair, o caso vai para um humano. |
 | LLM executa comando perigoso | O modelo não escreve comandos: escolhe de um **catálogo fechado** de 6 ações tipadas. Qualquer outra coisa vira `escalate`. |
 | Ação errada | **Política em código** (`policy.py`): confiança mínima, allowlist de deployments, limites (réplicas 1..5, memória 64..1024Mi), só `FAULT_*` removíveis sozinho; reduzir réplicas ou remover outra variável exige aprovação. |
 | Bug no agente | **RBAC mínimo**: leitura no namespace `orders` + escrita só em `deployments`. Sem delete, sem Secrets, sem exec. O cluster recusa o resto. |
@@ -95,7 +98,7 @@ terraform -chdir=infra/terraform destroy   # quando não precisar mais
 | `api-latency` | deploy com `FAULT_LATENCY_MS=600` | `OrdersApiHighLatency` | rollback ou remover a variável |
 | `bad-image` | tag de imagem inexistente | `OrdersApiPodsFailing` | rollback |
 
-Testes automatizados (sem nuvem, cluster simulado): `cd apps/sre-agent && pip install -r requirements.txt pytest && pytest -q`: 20 testes cobrindo os 5 cenários, retry, reversão, guardrails e a regressão do rollback. Rodam no CI junto com `terraform validate`, kubeconform, Semgrep (SAST) e Trivy, todos como gate.
+Testes automatizados (sem nuvem, cluster simulado): `cd apps/sre-agent && pip install -r requirements.txt pytest && pytest -q`: 32 testes cobrindo os 5 cenários, retry, reversão, guardrails, a regressão do rollback e o time de agentes (veto do Revisor, Revisor fora do ar, Documentador que falha sem afetar o resultado). Rodam no CI junto com `terraform validate`, kubeconform, Semgrep (SAST) e Trivy, todos como gate.
 
 ## Equivalências no Azure
 

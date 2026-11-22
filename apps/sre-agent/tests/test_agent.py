@@ -215,3 +215,134 @@ def test_metrics_endpoint_exposes_llm_metrics():
     for name in ("sre_agent_llm_latency_seconds", "sre_agent_llm_cost_usd_total", "sre_agent_mttr_seconds",
                  'sre_agent_llm_calls_total{outcome="error"}'):
         assert name in body
+
+
+# ---------------------------------------------------------------- time de agentes
+from agent.team import SafetyReviewerAgent, ScribeAgent  # noqa: E402
+
+
+class FakeReviewer:
+    def __init__(self, verdict="approve", boom=False):
+        self.verdict, self.boom, self.calls = verdict, boom, 0
+
+    def review(self, plan, signals):
+        self.calls += 1
+        if self.boom:
+            raise RuntimeError("ThrottlingException")
+        return {"verdict": self.verdict, "reason": f"teste: {self.verdict}", "concerns": []}, \
+               {"inputTokens": 300, "outputTokens": 40, "latency_seconds": 0.4, "model": "fake"}
+
+
+class FakeScribe:
+    def __init__(self, boom=False):
+        self.boom, self.facts = boom, None
+
+    def write(self, facts):
+        self.facts = facts
+        if self.boom:
+            raise ValueError("sem JSON")
+        return {"resumo": "Deploy com falha injetada foi revertido.", "impacto": "50% de erros por 2 min",
+                "causa_raiz": "FAULT_ERROR_RATE no deploy", "cinco_porques": ["a", "b", "c", "d", "e"],
+                "o_que_funcionou": ["detecção por burn rate"],
+                "acoes": [{"acao": "bloquear FAULT_* em produção", "tipo": "prevenir"}]}, \
+               {"inputTokens": 800, "outputTokens": 300, "latency_seconds": 1.5, "model": "fake"}
+
+
+def make_team(planner=None, reviewer=None, scribe=None, **overrides):
+    cluster, runner = make(planner, **overrides)
+    runner.reviewer, runner.scribe = reviewer, scribe
+    return cluster, runner
+
+
+def test_team_resolves_and_records_conversation_and_usage_per_agent():
+    cluster, runner = make_team(reviewer=FakeReviewer("approve"), scribe=FakeScribe())
+    cluster.apply_template(env={**cluster.template["env"], "FAULT_ERROR_RATE": "0.5"})
+    inc = runner.run(ALERT)
+    assert inc["outcome"] == "resolved"
+    speakers = [m["from"] for m in inc["conversation"]]
+    for agent in ("investigador", "diagnosticador", "revisor", "politica", "executor", "verificador", "documentador"):
+        assert agent in speakers, agent
+    by = inc["usage"]["by_agent"]
+    assert set(by) == {"diagnosticador", "revisor", "documentador"}
+    assert inc["usage"]["inputTokens"] == 1000 + 300 + 800
+    md = report.render_markdown(inc)
+    assert "Conversa entre os agentes" in md and "5 porquês" in md and "| revisor | 1 |" in md
+
+
+def test_reviewer_reject_makes_it_more_conservative():
+    cluster, runner = make_team(reviewer=FakeReviewer("reject"))
+    cluster.apply_template(env={"FAULT_ERROR_RATE": "0.5"})
+    n = len(cluster.actions)
+    inc = runner.run(ALERT)
+    assert inc["outcome"] == "escalated" and len(cluster.actions) == n
+    assert "Revisor rejeitou" in inc["attempts"][0]["decision"]["reasons"][0]
+
+
+def test_reviewer_approval_cannot_override_policy():
+    reviewer = FakeReviewer("approve")
+    _, runner = make_team(ScriptedPlanner({"action": {"type": "scale", "deployment": "orders-api", "replicas": 50}}),
+                          reviewer=reviewer)
+    assert runner.run(ALERT)["outcome"] == "escalated"
+    assert reviewer.calls == 1
+
+
+def test_reviewer_down_fails_safe():
+    cluster, runner = make_team(reviewer=FakeReviewer(boom=True))
+    cluster.apply_template(env={"FAULT_ERROR_RATE": "0.5"})
+    inc = runner.run(ALERT)
+    assert inc["outcome"] == "escalated"
+    assert inc["usage"]["by_agent"]["revisor"]["errors"] == 1
+
+
+def test_reviewer_abstain_leaves_decision_to_policy():
+    cluster, runner = make_team(reviewer=FakeReviewer("abstain"))
+    cluster.apply_template(env={"FAULT_ERROR_RATE": "0.5"})
+    assert runner.run(ALERT)["outcome"] == "resolved"
+
+
+def test_reviewer_not_called_when_diagnostician_escalates():
+    reviewer = FakeReviewer("approve")
+    _, runner = make_team(ScriptedPlanner({"action": {"type": "escalate", "reason": "não sei"}}), reviewer=reviewer)
+    runner.run(ALERT)
+    assert reviewer.calls == 0
+
+
+def test_scribe_failure_never_changes_the_outcome():
+    cluster, runner = make_team(reviewer=FakeReviewer("approve"), scribe=FakeScribe(boom=True))
+    cluster.apply_template(env={"FAULT_ERROR_RATE": "0.5"})
+    inc = runner.run(ALERT)
+    assert inc["outcome"] == "resolved" and "postmortem" not in inc
+    assert "Incidente" in report.render_markdown(inc)
+
+
+def test_scribe_receives_only_facts():
+    scribe = FakeScribe()
+    cluster, runner = make_team(scribe=scribe)
+    cluster.apply_template(memory_limit="20Mi")
+    runner.run(ALERT)
+    assert scribe.facts["resultado"] == "resolved"
+    assert scribe.facts["tentativas"][0]["acao"]["type"] == "rollback"
+
+
+class FakeLLM:
+    def __init__(self, text):
+        self.text = text
+
+    def ask(self, system, prompt, max_tokens=800):
+        return self.text, {"inputTokens": 10, "outputTokens": 5, "latency_seconds": 0.1, "model": "fake"}
+
+
+def test_reviewer_parses_markdown_json_and_abstains_on_garbage():
+    plan = {"summary": "s", "root_cause": "r", "confidence": "high", "action": {"type": "rollback", "deployment": "orders-api"}}
+    ok, _ = SafetyReviewerAgent(FakeLLM('```json\n{"verdict":"approve","reason":"bate com o sinal"}\n```')).review(plan, ["RECENT CHANGE"])
+    assert ok["verdict"] == "approve"
+    bad, _ = SafetyReviewerAgent(FakeLLM("acho que sim")).review(plan, [])
+    assert bad["verdict"] == "abstain"
+    weird, _ = SafetyReviewerAgent(FakeLLM('{"verdict":"maybe"}')).review(plan, [])
+    assert weird["verdict"] == "abstain"
+
+
+def test_scribe_parses_postmortem():
+    pm, _ = ScribeAgent(FakeLLM('{"resumo":"x","impacto":"y","causa_raiz":"z","cinco_porques":["1","2","3","4","5","6"],'
+                                '"acoes":[{"acao":"a","tipo":"prevenir"}]}')).write({})
+    assert len(pm["cinco_porques"]) == 5 and pm["acoes"][0]["tipo"] == "prevenir"

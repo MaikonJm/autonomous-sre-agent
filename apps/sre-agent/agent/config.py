@@ -28,6 +28,10 @@ class Settings:
     removable_env_prefixes: list[str] = field(default_factory=lambda: _list("REMOVABLE_ENV_PREFIXES", "FAULT_"))
     cooldown_seconds: int = field(default_factory=lambda: int(os.getenv("COOLDOWN_SECONDS", "300")))
 
+    # --- time de agentes ---
+    enable_reviewer: bool = field(default_factory=lambda: os.getenv("ENABLE_REVIEWER", "true").lower() == "true")
+    enable_scribe: bool = field(default_factory=lambda: os.getenv("ENABLE_SCRIBE", "true").lower() == "true")
+
     # --- verificação pós-ação ---
     verify_timeout_seconds: int = field(default_factory=lambda: int(os.getenv("VERIFY_TIMEOUT_SECONDS", "240")))
     verify_interval_seconds: int = field(default_factory=lambda: int(os.getenv("VERIFY_INTERVAL_SECONDS", "10")))

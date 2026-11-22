@@ -40,14 +40,27 @@ Fluxo de um alerta: `orders-api` gera erros → Prometheus calcula a taxa de err
 - `main.py`: API FastAPI com métricas RED (requisições, erros, latência em histograma). Falhas injetadas por variáveis de ambiente `FAULT_ERROR_RATE` e `FAULT_LATENCY_MS`: toda falha vira uma nova revisão do Deployment, como um deploy ruim de verdade.
 - `loadgen.py`: o gerador de tráfego (mesma imagem, outro comando).
 
-**`apps/sre-agent/agent/`**: o cérebro, um arquivo por responsabilidade:
+**`apps/sre-agent/agent/`**: o cérebro, que funciona como um **time de agentes especialistas**:
+
+| Agente | Tipo | Papel | Pode... |
+| --- | --- | --- | --- |
+| Investigador | código | Coleta evidências e calcula os sinais | só ler |
+| Diagnosticador | LLM | Causa raiz + uma ação do catálogo | só propor |
+| Revisor de segurança | LLM | Segunda opinião sobre o plano | só vetar |
+| Política | código | Decisão final com os limites | liberar ou barrar |
+| Executor | código | Aplica a ação, com snapshot | alterar só deployments do namespace orders |
+| Verificador | código | Confere rollout e SLO; manda reverter se piorou | só ler |
+| Documentador | LLM | Postmortem blameless em português | só escrever texto |
+
+Os arquivos:
 
 | Arquivo | Papel | Analogia com um SRE humano |
 | --- | --- | --- |
 | `main.py` | API: recebe o webhook, cooldown, 1 incidente por vez, painel `/`, relatórios `/reports`, `/selftest`, `/metrics` | O pager tocando |
-| `incident.py` | O **loop**: evidência → plano → política → ação → verificação → retry/reversão/escala | O processo de resposta a incidente |
+| `incident.py` | O **orquestrador do time**: passa o caso de agente em agente e registra a conversa entre eles | O incident commander |
+| `team.py` | Os agentes **Revisor de segurança** (veto) e **Documentador** (postmortem em português) | O colega que revisa a mudança / quem escreve o postmortem |
 | `evidence.py` | Coleta (só leitura) e **sinais determinísticos**: "o que mudou na última revisão?", OOMKilled, CrashLoop, 0 réplicas, erro nos logs | Abrir o dashboard e perguntar "o que mudou?" |
-| `planner.py` | Prompt e chamada ao **Bedrock**; o modelo devolve JSON com diagnóstico e **uma** ação do catálogo | O raciocínio |
+| `planner.py` | Cliente do **Bedrock** compartilhado e o agente **Diagnosticador**: diagnóstico e **uma** ação do catálogo | O raciocínio |
 | `policy.py` | **Guardrails**: decide `execute`, `approval_required`, `escalate` ou `dry_run` | O processo de mudança da empresa |
 | `kube.py` | Leitura do Kubernetes e as ações (rollback igual ao `kubectl rollout undo`, scale, restart, etc.) | As mãos no `kubectl` |
 | `prom.py` | Consultas PromQL dos SLIs | Olhar o Grafana |

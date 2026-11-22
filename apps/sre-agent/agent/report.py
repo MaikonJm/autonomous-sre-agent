@@ -59,6 +59,9 @@ def render_markdown(inc: dict) -> str:
             f"- **Resultado esperado:** {p.get('expected_outcome', '')} · **Risco:** {p.get('risk', '')}",
             f"- **Política:** `{at['decision']['verdict']}`: {'; '.join(at['decision']['reasons'])}",
         ]
+        if at.get("review"):
+            r = at["review"]
+            lines.append(f"- **Revisor de segurança:** `{r['verdict']}`: {r['reason']}")
         if "result" in at:
             lines.append(f"- **Execução:** {at['result']}")
         if "verify" in at:
@@ -68,6 +71,20 @@ def render_markdown(inc: dict) -> str:
         if at.get("reverted"):
             lines.append(f"- **Reversão:** {at['reverted']}")
         lines.append("")
+    if inc.get("conversation"):
+        lines += ["## Conversa entre os agentes", "| Hora | De → Para | Mensagem |", "| --- | --- | --- |"]
+        lines += [f"| {m['at'][11:19]} | {m['from']} → {m['to']} | {m['msg'].replace('|', '/')} |" for m in inc["conversation"]]
+        lines.append("")
+    pm = inc.get("postmortem")
+    if pm:
+        lines += ["## Postmortem (escrito pelo agente Documentador)", f"**Resumo:** {pm['resumo']}", "",
+                  f"**Impacto:** {pm['impacto']}", "", f"**Causa raiz:** {pm['causa_raiz']}", "", "**5 porquês:**"]
+        lines += [f"{i}. {w}" for i, w in enumerate(pm["cinco_porques"], 1)]
+        if pm["o_que_funcionou"]:
+            lines += ["", "**O que funcionou:**", *[f"- {w}" for w in pm["o_que_funcionou"]]]
+        if pm["acoes"]:
+            lines += ["", "| Ação de prevenção | Tipo |", "| --- | --- |", *[f"| {a['acao']} | {a['tipo']} |" for a in pm["acoes"]]]
+        lines.append("")
     lines += ["## SLIs", "| SLI | Antes | Depois |", "| --- | --- | --- |"]
     before = inc.get("initial_slis", {})
     after = (last.get("verify") or {}).get("slis", {})
@@ -76,6 +93,10 @@ def render_markdown(inc: dict) -> str:
     lines += ["", "## Linha do tempo (UTC)", "| Hora | Evento |", "| --- | --- |"]
     lines += [f"| {t['at'][11:19]} | {t['event']} |" for t in inc["timeline"]]
     u = inc["usage"]
+    if u.get("by_agent"):
+        lines += ["", "| Agente | Chamadas | Tokens (entrada/saída) | Tempo de LLM | Custo |", "| --- | --- | --- | --- | --- |"]
+        lines += [f"| {name} | {a['calls']} | {a['inputTokens']}/{a['outputTokens']} | {a['seconds']:.2f} s | US$ {a.get('cost_usd', 0):.6f} |"
+                  for name, a in u["by_agent"].items()]
     lines += ["", f"<sub>Modelo: {u['model']} · tokens: {u['inputTokens']} entrada / {u['outputTokens']} saída · "
                   f"tempo de LLM: {u['llm_seconds']:.2f} s · custo estimado: US$ {u['cost_usd']:.6f}</sub>"]
     if inc["outcome"] != "resolved":

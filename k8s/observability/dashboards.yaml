@@ -1309,6 +1309,206 @@ data:
           ]
         },
         {
+          "type": "row",
+          "title": "Time de agentes: quem fez o quê",
+          "gridPos": {
+            "x": 0,
+            "y": 23,
+            "w": 24,
+            "h": 1
+          },
+          "collapsed": false,
+          "panels": []
+        },
+        {
+          "type": "timeseries",
+          "title": "Chamadas ao LLM por agente",
+          "description": "Diagnosticador decide, Revisor confere, Documentador escreve o postmortem.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 24,
+            "w": 8,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "custom": {
+                "fillOpacity": 60,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "normal"
+                },
+                "drawStyle": "bars"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (agent) (increase(sre_agent_team_llm_calls_total{outcome=\"ok\"}[5m]))",
+              "legendFormat": "{{agent}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Custo por agente (US$, acumulado)",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 8,
+            "y": 24,
+            "w": 8,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "currencyUSD",
+              "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (agent) (sre_agent_team_llm_cost_usd_total)",
+              "legendFormat": "{{agent}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Vereditos do Revisor de segurança",
+          "description": "reject = o Revisor barrou o plano e o caso foi para um humano (mais conservador, nunca menos).",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 16,
+            "y": 24,
+            "w": 8,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "custom": {
+                "fillOpacity": 60,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "normal"
+                },
+                "drawStyle": "bars"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (verdict) (increase(sre_agent_reviews_total[5m]))",
+              "legendFormat": "{{verdict}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Latência do LLM por agente (p95)",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 32,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.95, sum by (le, agent) (rate(sre_agent_team_llm_latency_seconds_bucket[30m])))",
+              "legendFormat": "{{agent}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              }
+            }
+          ]
+        },
+        {
           "type": "timeseries",
           "title": "Duração do tratamento (p50 / p95)",
           "description": "",
@@ -1317,9 +1517,9 @@ data:
             "uid": "${datasource}"
           },
           "gridPos": {
-            "x": 0,
-            "y": 23,
-            "w": 24,
+            "x": 12,
+            "y": 32,
+            "w": 12,
             "h": 8
           },
           "fieldConfig": {

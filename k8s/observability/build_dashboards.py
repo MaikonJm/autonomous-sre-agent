@@ -137,9 +137,21 @@ agent_panels = [
     ts("Chamadas ao LLM: ok x erro",
        [('sum by (outcome) (increase(sre_agent_llm_calls_total[5m]))', "{{outcome}}")], "none", 16, 15, w=8, stack=True,
        desc="Erro aqui = falha segura: o agente escala em vez de agir."),
+    row("Time de agentes: quem fez o quê", 23),
+    ts("Chamadas ao LLM por agente",
+       [('sum by (agent) (increase(sre_agent_team_llm_calls_total{outcome="ok"}[5m]))', "{{agent}}")], "none", 0, 24, w=8,
+       stack=True, desc="Diagnosticador decide, Revisor confere, Documentador escreve o postmortem."),
+    ts("Custo por agente (US$, acumulado)",
+       [("sum by (agent) (sre_agent_team_llm_cost_usd_total)", "{{agent}}")], "currencyUSD", 8, 24, w=8),
+    ts("Vereditos do Revisor de segurança",
+       [('sum by (verdict) (increase(sre_agent_reviews_total[5m]))', "{{verdict}}")], "none", 16, 24, w=8, stack=True,
+       desc="reject = o Revisor barrou o plano e o caso foi para um humano (mais conservador, nunca menos)."),
+    ts("Latência do LLM por agente (p95)",
+       [("histogram_quantile(0.95, sum by (le, agent) (rate(sre_agent_team_llm_latency_seconds_bucket[30m])))", "{{agent}}")],
+       "s", 0, 32, w=12),
     ts("Duração do tratamento (p50 / p95)",
        [("histogram_quantile(0.5, sum by (le) (rate(sre_agent_incident_seconds_bucket[30m])))", "p50"),
-        ("histogram_quantile(0.95, sum by (le) (rate(sre_agent_incident_seconds_bucket[30m])))", "p95")], "s", 0, 23, w=24),
+        ("histogram_quantile(0.95, sum by (le) (rate(sre_agent_incident_seconds_bucket[30m])))", "p95")], "s", 12, 32, w=12),
 ]
 
 boards = {

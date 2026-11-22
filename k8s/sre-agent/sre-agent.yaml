@@ -50,6 +50,10 @@ data:
   TARGET_DEPLOYMENTS: orders-api
   PROMETHEUS_URL: http://kps-kube-prometheus-stack-prometheus.monitoring:9090
   DRY_RUN: "false"
+  # Time de agentes: Revisor de segurança (segunda opinião, só pode ser mais conservador)
+  # e Documentador (postmortem em português). "false" volta ao agente único.
+  ENABLE_REVIEWER: "true"
+  ENABLE_SCRIBE: "true"
   MIN_CONFIDENCE: medium
   MAX_ATTEMPTS: "2"
   MAX_ACTIONS_PER_HOUR: "10"

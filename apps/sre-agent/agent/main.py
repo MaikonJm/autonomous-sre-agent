@@ -27,6 +27,12 @@ LLM_CALLS = Counter("sre_agent_llm_calls_total", "Chamadas ao LLM", ["outcome"])
 LLM_COST = Counter("sre_agent_llm_cost_usd_total", "Custo estimado do LLM em US$")
 MTTR = Histogram("sre_agent_mttr_seconds", "Do início do alerta até a correção verificada",
                  buckets=(30, 60, 90, 120, 180, 300, 600, 1200))
+AGENT_CALLS = Counter("sre_agent_team_llm_calls_total", "Chamadas ao LLM por agente do time", ["agent", "outcome"])
+AGENT_TOKENS = Counter("sre_agent_team_llm_tokens_total", "Tokens por agente do time", ["agent", "direction"])
+AGENT_COST = Counter("sre_agent_team_llm_cost_usd_total", "Custo estimado por agente do time", ["agent"])
+AGENT_LATENCY = Histogram("sre_agent_team_llm_latency_seconds", "Latência do LLM por agente", ["agent"],
+                          buckets=(0.25, 0.5, 1, 2, 4, 8, 16))
+REVIEWS = Counter("sre_agent_reviews_total", "Veredito do agente Revisor", ["verdict"])
 
 for _o in ("resolved", "escalated", "approval_required", "dry_run"):
     INCIDENTS.labels("-", _o)
@@ -34,6 +40,12 @@ for _o in ("ok", "error"):
     LLM_CALLS.labels(_o)
 for _d in ("input", "output"):
     TOKENS.labels(_d)
+for _a in ("diagnosticador", "revisor", "documentador"):
+    for _o in ("ok", "error"):
+        AGENT_CALLS.labels(_a, _o)
+    AGENT_COST.labels(_a)
+for _v in ("approve", "reject", "abstain"):
+    REVIEWS.labels(_v)
 
 settings = Settings()
 app = FastAPI(title="Agente SRE autônomo")
@@ -48,11 +60,15 @@ def runner() -> IncidentRunner:
     global _runner
     if _runner is None:
         from .kube import KubeCluster
-        from .planner import BedrockPlanner
+        from .planner import BedrockLLM, DiagnosticianAgent
         from .prom import Prometheus
+        from .team import SafetyReviewerAgent, ScribeAgent
 
+        llm = BedrockLLM(settings)  # um cliente, vários agentes com prompts e papéis diferentes
         _runner = IncidentRunner(KubeCluster(settings.namespace), Prometheus(settings.prometheus_url),
-                                 BedrockPlanner(settings), Policy(settings), settings)
+                                 DiagnosticianAgent(llm), Policy(settings), settings,
+                                 reviewer=SafetyReviewerAgent(llm) if settings.enable_reviewer else None,
+                                 scribe=ScribeAgent(llm) if settings.enable_scribe else None)
     return _runner
 
 
@@ -73,7 +89,17 @@ def handle(alert: dict) -> None:
         LLM_COST.inc(inc["usage"]["cost_usd"])
         if inc.get("mttr_seconds") is not None:
             MTTR.observe(inc["mttr_seconds"])
+        for agent, a in inc["usage"].get("by_agent", {}).items():
+            AGENT_CALLS.labels(agent, "ok").inc(a["calls"] - a["errors"])
+            AGENT_CALLS.labels(agent, "error").inc(a["errors"])
+            AGENT_TOKENS.labels(agent, "input").inc(a["inputTokens"])
+            AGENT_TOKENS.labels(agent, "output").inc(a["outputTokens"])
+            AGENT_COST.labels(agent).inc(a.get("cost_usd", 0))
+            for lat in a.get("latencies", []):
+                AGENT_LATENCY.labels(agent).observe(lat)
         for at in inc["attempts"]:
+            if at.get("review"):
+                REVIEWS.labels(at["review"]["verdict"]).inc()
             ACTIONS.labels(at["plan"]["action"].get("type", "?"), at["decision"]["verdict"]).inc()
             LLM_CALLS.labels("ok" if at.get("llm_ok") else "error").inc()
             if at.get("usage", {}).get("latency_seconds"):

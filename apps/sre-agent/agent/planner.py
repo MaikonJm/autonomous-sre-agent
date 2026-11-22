@@ -1,4 +1,4 @@
-"""Planejador: o LLM (Amazon Bedrock) diagnostica e escolhe UMA ação tipada.
+"""Agente Diagnosticador: o LLM (Amazon Bedrock) diagnostica e escolhe UMA ação tipada.
 
 O modelo não escreve comandos: ele escolhe uma ação de um catálogo fechado
 com parâmetros. Quem decide se a ação roda é a política (policy.py), em
@@ -68,23 +68,37 @@ def build_prompt(alert: dict, signals: list[str], evidence: dict, history: list[
     return "\n\n".join(parts)
 
 
-class BedrockPlanner:
+class BedrockLLM:
+    """Cliente único do Bedrock, compartilhado por todos os agentes do time."""
+
     def __init__(self, settings):
-        import boto3  # credenciais via web identity (AWS_ROLE_ARN + AWS_WEB_IDENTITY_TOKEN_FILE)
+        import boto3  # credencial temporária da role do nó (IMDSv2)
 
         self.model = settings.bedrock_model_id
         self.client = boto3.client("bedrock-runtime", region_name=settings.aws_region)
 
-    def plan(self, alert, signals, evidence, history) -> tuple[dict, dict]:
+    def ask(self, system: str, prompt: str, max_tokens: int = 800) -> tuple[str, dict]:
         start = time.perf_counter()
         resp = self.client.converse(
             modelId=self.model,
-            system=[{"text": SYSTEM_PROMPT}],
-            messages=[{"role": "user", "content": [{"text": build_prompt(alert, signals, evidence, history)}]}],
-            inferenceConfig={"maxTokens": 800, "temperature": 0.1},
+            system=[{"text": system}],
+            messages=[{"role": "user", "content": [{"text": prompt}]}],
+            inferenceConfig={"maxTokens": max_tokens, "temperature": 0.1},
         )
         usage = {**resp.get("usage", {}), "latency_seconds": round(time.perf_counter() - start, 2), "model": self.model}
-        text = resp["output"]["message"]["content"][0]["text"]
+        return resp["output"]["message"]["content"][0]["text"], usage
+
+
+class DiagnosticianAgent:
+    """Agente Diagnosticador: encontra a causa raiz e propõe UMA ação do catálogo."""
+
+    name = "diagnosticador"
+
+    def __init__(self, llm):
+        self.llm = llm
+
+    def plan(self, alert, signals, evidence, history) -> tuple[dict, dict]:
+        text, usage = self.llm.ask(SYSTEM_PROMPT, build_prompt(alert, signals, evidence, history))
         try:
             return parse_plan(text), usage
         except (ValueError, json.JSONDecodeError):
@@ -92,3 +106,7 @@ class BedrockPlanner:
             return {"summary": "Model output could not be parsed", "root_cause": text[:1000], "confidence": "low",
                     "evidence": [], "action": {"type": "escalate", "reason": "unparseable model output"},
                     "expected_outcome": "", "risk": ""}, usage
+
+
+def BedrockPlanner(settings):  # compatibilidade: o planner antigo é o Diagnosticador
+    return DiagnosticianAgent(BedrockLLM(settings))
