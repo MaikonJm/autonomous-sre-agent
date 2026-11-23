@@ -5,3 +5,4 @@ __pycache__/
 .terraform.lock.hcl
 terraform.tfvars
 reports/
+tfplan*

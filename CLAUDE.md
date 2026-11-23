@@ -19,7 +19,7 @@ Este repositório é a demo da entrevista: um agente SRE autônomo com guardrail
 Cada passo: mostre o resultado em poucas linhas e espere o "ok" antes dos que geram custo ou mudam permissões.
 
 1. **Ligar:** `git pull` e `./scripts/lab.sh start` (pedir confirmação). Esperar ~3 min.
-2. **Infra nova (supply chain):** rode `aws iam list-open-id-connect-providers`. Se já existir o provider `token.actions.githubusercontent.com`, use `create_github_oidc_provider=false` (padrão); senão, `true`. Rode `terraform plan` em `infra/terraform` com `-var repo_url=https://github.com/MaikonJm/autonomous-sre-agent.git -var alert_email=maikonjm@gmail.com`.
+2. **Infra nova (supply chain):** rode `aws iam list-open-id-connect-providers`. Se já existir o provider `token.actions.githubusercontent.com`, use `create_github_oidc_provider=false` (padrão); senão, `true`. Rode `terraform plan` em `infra/terraform` com `-var repo_url=https://github.com/MaikonJm/autonomous-sre-agent.git -var alert_email=seu-email@exemplo.com`.
    - **Esperado:** cerca de 10 recursos novos (2 ECR, 2 lifecycle, signing profile, role e policy do GitHub, policy do nó, 2 parâmetros SSM e, talvez, o provider OIDC). **0 para destruir.**
    - **Se o plano quiser substituir ou destruir a `aws_instance`, PARE e explique.** Não pode acontecer.
    - Mostre o resumo, peça confirmação e faça o `apply`.
