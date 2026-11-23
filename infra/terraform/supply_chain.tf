@@ -187,5 +187,7 @@ output "signing_profile_arn" {
 }
 
 output "ecr_registry" {
-  value = aws_ssm_parameter.ecr_registry.value
+  # Lê a URL do repositório, não o parâmetro SSM: o provider marca todo
+  # aws_ssm_parameter.value como sensível, e o endereço do registry não é segredo.
+  value = split("/", aws_ecr_repository.app["orders-api"].repository_url)[0]
 }
