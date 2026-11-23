@@ -64,7 +64,10 @@ jobs:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
           PROFILE: ${{ vars.SIGNING_PROFILE_ARN }}
         run: |
-          aws ecr get-login-password --region "$AWS_REGION" | notation login --username AWS --password-stdin "$REGISTRY"
+          # notation login exige um credential store seguro, que o runner não tem.
+          # Credencial temporária do ECR (12h) só no ambiente deste step, nunca gravada em disco.
+          export NOTATION_USERNAME=AWS NOTATION_PASSWORD="$(aws ecr get-login-password --region "$AWS_REGION")"
+          echo "::add-mask::$NOTATION_PASSWORD"
           TAG="${GITHUB_SHA::12}"
           for app in orders-api sre-agent; do
             REPO="$REGISTRY/$REPO_PREFIX/$app"
@@ -86,6 +89,8 @@ jobs:
             "trustedIdentities":["$PROFILE"]}]}
           EOF
           notation policy import --force /tmp/trustpolicy.json
+          export NOTATION_USERNAME=AWS NOTATION_PASSWORD="$(aws ecr get-login-password --region "$AWS_REGION")"
+          echo "::add-mask::$NOTATION_PASSWORD"
           while read -r app ref; do notation verify "$ref"; done < /tmp/signed.txt
           {
             echo "### Imagens publicadas e assinadas"

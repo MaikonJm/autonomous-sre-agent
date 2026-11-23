@@ -17,7 +17,8 @@ cat > /tmp/trustpolicy.json <<JSON
 JSON
 notation policy import --force /tmp/trustpolicy.json >/dev/null
 REGISTRY=$(aws ssm get-parameter --name "/$PROJECT/ecr-registry" --query Parameter.Value --output text)
-aws ecr get-login-password | notation login --username AWS --password-stdin "$REGISTRY" >/dev/null
+# notation login exige credential store seguro (o nó não tem): credencial só no ambiente
+export NOTATION_USERNAME=AWS NOTATION_PASSWORD="$(aws ecr get-login-password)"
 DIGEST=$(aws ecr describe-images --repository-name "$PROJECT/orders-api" \
   --query 'sort_by(imageDetails,&imagePushedAt)[-1].imageDigest' --output text)
 
@@ -25,4 +26,4 @@ echo "== 1) Imagem do pipeline (assinada pelo AWS Signer)"
 notation verify "$REGISTRY/$PROJECT/orders-api@$DIGEST" && echo ">>> VÁLIDA: deploy permitido"
 echo
 echo "== 2) Imagem pública sem assinatura"
-notation verify public.ecr.aws/docker/library/busybox:1.36 || echo ">>> REJEITADA: o deploy seria bloqueado"
+env -u NOTATION_USERNAME -u NOTATION_PASSWORD notation verify public.ecr.aws/docker/library/busybox:1.36 || echo ">>> REJEITADA: o deploy seria bloqueado"

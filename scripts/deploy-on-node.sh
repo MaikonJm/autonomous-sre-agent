@@ -55,7 +55,8 @@ if [ "$IMAGE_SOURCE" = "ecr" ]; then
   "trustedIdentities":["$PROFILE"]}]}
 JSON
   notation policy import --force /tmp/trustpolicy.json >/dev/null
-  aws ecr get-login-password | notation login --username AWS --password-stdin "$REGISTRY" >/dev/null
+  # notation login exige credential store seguro (o nó não tem): credencial só no ambiente
+  export NOTATION_USERNAME=AWS NOTATION_PASSWORD="$(aws ecr get-login-password)"
   aws ecr get-login-password | $SUDO docker login --username AWS --password-stdin "$REGISTRY" >/dev/null
   TAG="$ECR_TAG"
   for app in orders-api sre-agent; do
