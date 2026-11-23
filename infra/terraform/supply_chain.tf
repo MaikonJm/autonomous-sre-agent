@@ -9,6 +9,16 @@ variable "github_repository" {
   default     = "MaikonJm/autonomous-sre-agent"
 }
 
+variable "github_sub_prefix" {
+  description = <<-EOT
+    Prefixo do claim "sub" do token OIDC. Este repositório usa o subject IMUTÁVEL do GitHub
+    (owner@id/repo@id): um repo recriado com o mesmo nome não herda o acesso. Confira com
+    `gh api repos/<owner>/<repo>/actions/oidc/customization/sub`. Vazio = formato antigo repo:owner/repo.
+  EOT
+  type        = string
+  default     = "repo:MaikonJm@37089888/autonomous-sre-agent@1462157668"
+}
+
 variable "create_github_oidc_provider" {
   description = "false se a conta já tem o provider OIDC do GitHub (só pode existir um por conta)"
   type        = bool
@@ -83,7 +93,7 @@ data "aws_iam_policy_document" "release_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repository}:ref:refs/heads/main"]
+      values   = ["${var.github_sub_prefix != "" ? var.github_sub_prefix : "repo:${var.github_repository}"}:ref:refs/heads/main"]
     }
   }
 }
