@@ -57,7 +57,7 @@ data:
             },
             "enable": true,
             "iconColor": "purple",
-            "expr": "increase(sre_agent_actions_total{verdict=\"execute\"}[1m]) > 0"
+            "expr": "(increase(sre_agent_actions_total{verdict=\"execute\"}[1m]) > 0) or (sre_agent_actions_total{verdict=\"execute\"} unless sre_agent_actions_total{verdict=\"execute\"} offset 1m)"
           },
           {
             "name": "Alerta disparado",
@@ -742,7 +742,7 @@ data:
             },
             "enable": true,
             "iconColor": "purple",
-            "expr": "increase(sre_agent_actions_total{verdict=\"execute\"}[1m]) > 0"
+            "expr": "(increase(sre_agent_actions_total{verdict=\"execute\"}[1m]) > 0) or (sre_agent_actions_total{verdict=\"execute\"} unless sre_agent_actions_total{verdict=\"execute\"} offset 1m)"
           },
           {
             "name": "Alerta disparado",
