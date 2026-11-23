@@ -9,6 +9,9 @@ ID=$($TF output -raw instance_id)
 REGION=$($TF output -raw region)
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
+# No Git Bash o aws.exe é um binário Windows e não enxerga /tmp/...: converte o caminho.
+PARAMS="$WORK/params.json"
+command -v cygpath >/dev/null && PARAMS_URI="file://$(cygpath -m "$PARAMS")" || PARAMS_URI="file://$PARAMS"
 
 git bundle create "$WORK/lab.bundle" HEAD main >/dev/null 2>&1
 base64 "$WORK/lab.bundle" | tr -d '\n' > "$WORK/lab.b64"
@@ -16,10 +19,10 @@ SHA=$(sha256sum "$WORK/lab.bundle" | cut -d' ' -f1)
 split -b 12000 "$WORK/lab.b64" "$WORK/chunk."
 
 run() {  # $1 = comando shell a executar no nó como root; espera terminar e imprime a saída
-  printf '{"commands":["%s"]}' "$1" > "$WORK/params.json"
+  printf '{"commands":["%s"]}' "$1" > "$PARAMS"
   local cmd
   cmd=$(aws ssm send-command --region "$REGION" --instance-ids "$ID" --document-name AWS-RunShellScript \
-        --parameters "file://$WORK/params.json" --query Command.CommandId --output text)
+        --parameters "$PARAMS_URI" --query Command.CommandId --output text)
   aws ssm wait command-executed --region "$REGION" --command-id "$cmd" --instance-id "$ID" 2>/dev/null || true
   aws ssm get-command-invocation --region "$REGION" --command-id "$cmd" --instance-id "$ID" \
     --query '[Status,StandardOutputContent,StandardErrorContent]' --output text
