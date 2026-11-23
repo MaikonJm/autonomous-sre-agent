@@ -3,6 +3,7 @@
 #   imagem publicada e assinada pelo pipeline  -> VÁLIDA
 #   imagem pública qualquer, sem assinatura      -> REJEITADA
 set -uo pipefail
+export HOME="${HOME:-/root}"  # via SSM send-command não há HOME, e o notation guarda trust store/policy nele
 export AWS_DEFAULT_REGION="${AWS_REGION:-us-east-1}"
 PROJECT=autonomous-sre-agent
 # certificado raiz do AWS Signer no trust store "aws-signer-ts" (o instalador configura por usuário)
