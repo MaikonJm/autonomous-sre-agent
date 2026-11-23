@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Roda NO SEU COMPUTADOR (Git Bash/WSL/macOS/Linux), na raiz do repositório.
 # Envia o código da branch atual para /opt/lab no nó pelo SSM, sem credencial do GitHub no nó
-# (o repositório é privado). Depois: sudo /opt/lab/scripts/deploy-on-node.sh no nó.
+# (não depende de git nem de acesso ao GitHub no nó). Depois: sudo /opt/lab/scripts/deploy-on-node.sh no nó.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 TF="terraform -chdir=infra/terraform"

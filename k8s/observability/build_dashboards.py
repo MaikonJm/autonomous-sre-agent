@@ -66,7 +66,9 @@ def dashboard(uid, title, panels, annotations, tags):
 ANN_DEPLOY = {"name": "Deploy / mudança no orders-api", "datasource": DS, "enable": True, "iconColor": BLUE,
               "expr": f'changes(kube_deployment_status_observed_generation{{{ORDERS},deployment="orders-api"}}[1m]) > 0'}
 ANN_AGENT = {"name": "Ação do agente SRE", "datasource": DS, "enable": True, "iconColor": "purple",
-             "expr": 'increase(sre_agent_actions_total{verdict="execute"}[1m]) > 0'}
+             # a 2ª parte cobre a primeira ação: a série nasce já em 1 e increase() não enxerga esse salto
+             "expr": '(increase(sre_agent_actions_total{verdict="execute"}[1m]) > 0) or '
+                     '(sre_agent_actions_total{verdict="execute"} unless sre_agent_actions_total{verdict="execute"} offset 1m)'}
 ANN_ALERT = {"name": "Alerta disparado", "datasource": DS, "enable": True, "iconColor": RED,
              "expr": 'ALERTS{alertstate="firing",agent="sre"}'}
 

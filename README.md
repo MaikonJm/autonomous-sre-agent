@@ -1,27 +1,28 @@
+![Autonomous SRE Agent](docs/img/capa.png)
+
+[![CI](https://github.com/MaikonJm/autonomous-sre-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/MaikonJm/autonomous-sre-agent/actions/workflows/ci.yml)
+
 # Autonomous SRE Agent: um time de agentes de IA que resolve incidentes sozinho, com guardrails
 
 Evolução do [aws-sre-ai-platform](https://github.com/MaikonJm/aws-sre-ai-platform). Lá, o agente **diagnosticava** e um humano aplicava a correção. Aqui ele **fecha o ciclo**: diagnostica, escolhe uma ação, executa, verifica se o SLO voltou, tenta de novo ou desfaz se piorar, e escreve o relatório. Tudo dentro de guardrails escritos em código, não em prompt.
 
-```
- falha ─▶ Prometheus (SLO) ─▶ Alertmanager ─webhook─▶ ORQUESTRADOR (pod no k3s)
-                                                          │  um caso, passado de especialista em especialista
-  INVESTIGADOR   (código)  evidências + sinais determinísticos: "o que mudou?", OOMKilled, CrashLoop, 0 réplicas
-  DIAGNOSTICADOR (LLM)     causa raiz + UMA ação tipada: rollback | remove_env | scale | set_memory_limit | restart | escalate
-  REVISOR        (LLM)     segunda opinião: aprova ou rejeita (só pode deixar MAIS conservador)
-  POLÍTICA       (código)  decisão final: execute | approval_required | escalate | dry_run
-  EXECUTOR       (código)  aplica a ação com snapshot antes
-  VERIFICADOR    (código)  rollout + SLIs de 1 min: ok ─▶ resolvido · piorou ─▶ restaura · não resolveu ─▶ 2ª tentativa ─▶ escala
-  DOCUMENTADOR   (LLM)     postmortem blameless em português: 5 porquês e ações de prevenção
-  ─▶ relatório com a conversa entre os agentes · painel web · issue no GitHub (opcional) · métricas por agente
-```
+## Arquitetura
+
+![Arquitetura](docs/img/arquitetura.png)
+
+1. A `orders-api` gera métricas; o Prometheus calcula o SLO (99,5%) e o burn rate, e dispara o alerta.
+2. O Alertmanager chama o webhook do agente, que passa o caso de especialista em especialista.
+3. A ação sai de um catálogo fechado, é aplicada com snapshot e só conta como resolvida quando o SLO volta.
+
+![O time de agentes](docs/img/time-de-agentes.png)
 
 **Por que um time e não um agente só?** Cada agente tem um papel estreito, um prompt curto e uma saída verificável. Os agentes de LLM nunca ampliam o que pode ser feito: o Revisor só consegue barrar, e quem libera a execução é sempre a política em código. É o mesmo princípio de "quatro olhos" de uma mudança em produção, aplicado a agentes.
 
 **Infra na AWS:** VPC própria (1 subnet pública, sem NAT) · EC2 `c7i-flex.large` com k3s · **nenhuma porta aberta** (acesso só por SSM Session Manager) · IMDSv2 · disco criptografado · role com `bedrock:InvokeModel` em **um** modelo · budget com alertas por e-mail.
 
-## O que o projeto cobre (mapa da vaga)
+## O que o projeto cobre
 
-| Requisito | Onde ver funcionando |
+| Tema | Onde ver funcionando |
 | --- | --- |
 | Cloud + IaC | `infra/terraform` (VPC, EC2, IAM, ECR, Signer, budget), aplicado de verdade; `infra/azure-aks-reference` para o Azure |
 | Kubernetes e Docker | k3s, Deployments com probes, `maxUnavailable: 0`, RBAC mínimo do agente, `readOnlyRootFilesystem` |
@@ -33,6 +34,34 @@ Evolução do [aws-sre-ai-platform](https://github.com/MaikonJm/aws-sre-ai-platf
 | Assinatura de imagens com certificado | `release.yml`: build → ECR → **Notation + AWS Signer** → verify; o nó **bloqueia o deploy** se a assinatura for inválida (`scripts/signature-demo.sh`) |
 | Menor privilégio | Role do nó, role do GitHub via OIDC e grupo de operadores com negações explícitas (`infra/operator-iam`) |
 | IA, agentes e LLMs (diferencial) | **Time de agentes** (Investigador, Diagnosticador, Revisor, Executor, Verificador, Documentador) com papéis, veto e conversa auditável; custo, tokens e latência **por agente** no Grafana |
+
+## Resultados
+
+Rodada completa dos 5 cenários, com o time de agentes ligado (Revisor e Documentador ativos):
+
+| Métrica | Resultado |
+| --- | --- |
+| Resolvidos sem humano | **4 de 5**. No 5º (`bad-image`), o Revisor vetou o plano e o caso foi escalado para um humano: o comportamento seguro. |
+| MTTD médio (falha → alerta) | **92 s** (alertas ajustados para demo, janelas de 1 a 5 min) |
+| MTTR médio (alerta → SLO verificado) | **170 s** |
+| Custo de LLM da rodada inteira | **US$ 0,00112** (21.974 tokens no Nova Micro), cerca de US$ 0,0002 por incidente |
+
+Um incidente real da demo (`api-errors`), como aparece no relatório gerado pelo agente:
+
+| Hora | De → Para | Mensagem (resumida) |
+| --- | --- | --- |
+| 18:20:04 | alertmanager → investigador | orders-api com 50,39% de erros (SLO 99,5%) |
+| 18:20:04 | investigador → diagnosticador | 3 sinais; o principal: `FAULT_ERROR_RATE=0.5` no Deployment |
+| 18:20:05 | diagnosticador → revisor | proponho `remove_env FAULT_ERROR_RATE` (confiança high) |
+| 18:20:06 | revisor → política | aprovo: ataca o sinal mais forte e é reversível |
+| 18:20:06 | política → executor | execute |
+| 18:20:06 | executor → verificador | variável removida (snapshot guardado para reverter) |
+| 18:20:56 | verificador → documentador | SLO restabelecido em 50 s |
+| 18:20:58 | documentador → humanos | postmortem escrito |
+
+MTTR de 62 s, 3 chamadas de LLM, US$ 0,0002.
+
+**Limitações conhecidas:** o Revisor (modelo pequeno) foi conservador demais no `bad-image`, porque o sinal de troca de imagem chega fraco a ele; o postmortem do Documentador é um rascunho para revisão humana (já errou um número); k3s de 1 nó, sem alta disponibilidade.
 
 ## Guardrails
 
@@ -51,6 +80,8 @@ Evolução do [aws-sre-ai-platform](https://github.com/MaikonJm/aws-sre-ai-platf
 | Testar sem risco | `DRY_RUN=true`: registra o que faria, não altera nada. |
 
 ## Subir (≈15 min, quase tudo automático)
+
+> O laboratório foi desmontado com `terraform destroy` depois da apresentação. Tudo é recriado com os comandos abaixo.
 
 No seu computador: `aws` (logado), `terraform`, [Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html).
 
@@ -125,7 +156,7 @@ O laboratório roda na AWS, mas cada peça tem par direto no Azure. O Terraform 
 | Deploy falhou no meio | `sudo /opt/lab/scripts/deploy-on-node.sh` (é idempotente). Log: `/var/log/sre-lab-deploy.log`. |
 | Alertas não disparam | Sem tráfego: `kubectl -n loadtest get pods`. Espere ~3 min após o deploy. |
 | Agente escalou em vez de agir | Leia o relatório: a política explica o motivo (é o comportamento seguro). |
-| Atualizar o código no nó | No computador: `./scripts/sync-code-to-node.sh` (repositório privado, envia por SSM). No nó: `sudo /opt/lab/scripts/deploy-on-node.sh` |
+| Atualizar o código no nó | No computador: `./scripts/sync-code-to-node.sh` (envia por SSM, sem precisar de git no nó). No nó: `sudo /opt/lab/scripts/deploy-on-node.sh` |
 | Deploy bloqueado por assinatura | É o guardrail funcionando: a imagem não foi assinada pelo signing profile do projeto. Rode o workflow `release` e repita o deploy. |
 
 ## Decisões e trade-offs

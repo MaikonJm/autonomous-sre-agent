@@ -67,7 +67,7 @@ Os arquivos:
 | `report.py` | Relatório Markdown, painel HTML, issue no GitHub | O postmortem |
 | `config.py` | Todos os limites, lidos do ConfigMap | O runbook com as regras |
 
-`apps/sre-agent/tests/`: cluster e Prometheus **simulados** (`fakes.py`) e 20 testes (`test_agent.py`).
+`apps/sre-agent/tests/`: cluster e Prometheus **simulados** (`fakes.py`) e 32 testes (`test_agent.py`).
 
 ## 4. Scripts: `scripts/`
 
@@ -77,7 +77,7 @@ Os arquivos:
 | `deploy-on-node.sh` | No nó | Build das imagens, Prometheus, app, agente, autoteste. Idempotente. |
 | `run_scenarios.py` | No nó | Injeta cada falha, mede MTTD e MTTR, coleta o relatório do agente, gera `reports/test-run-*.md` |
 | `node-forward.sh` | No nó | Publica agente, Grafana e Prometheus no localhost do nó, para os túneis |
-| `sync-code-to-node.sh` | Seu computador | Envia o código atual ao nó pelo SSM (o repositório é privado) |
+| `sync-code-to-node.sh` | Seu computador | Envia o código atual ao nó pelo SSM (não depende de git no nó) |
 | `signature-demo.sh` | No nó | Imagem assinada pelo pipeline: válida. Imagem pública sem assinatura: rejeitada |
 | `netpol-demo.sh` | No nó | O mesmo teste de dois namespaces: `loadtest` permitido, `default` bloqueado |
 
