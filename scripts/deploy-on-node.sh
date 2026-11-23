@@ -35,7 +35,9 @@ PROFILE=$(aws ssm get-parameter --name "/$PROJECT/signing-profile-arn" --query P
 ECR_TAG=""
 if [ -n "$REGISTRY" ] && [ "$IMAGE_SOURCE" != "local" ]; then
   ECR_TAG=$(aws ecr describe-images --repository-name "$PROJECT/orders-api" \
-    --query 'sort_by(imageDetails,&imagePushedAt)[-1].imageTags[0]' --output text 2>/dev/null || true)
+    --query "sort_by(imageDetails[?imageTags != null && !starts_with(imageTags[0], 'sha256-')], &imagePushedAt)[-1].imageTags[0]" \
+    --output text 2>/dev/null || true)
+  # ignora as assinaturas do Notation: o índice de referrers ganha a tag sha256-<digest> e é o último push
   [ "$ECR_TAG" = "None" ] && ECR_TAG=""
 fi
 [ "$IMAGE_SOURCE" = "auto" ] && { [ -n "$ECR_TAG" ] && IMAGE_SOURCE=ecr || IMAGE_SOURCE=local; }

@@ -20,7 +20,8 @@ REGISTRY=$(aws ssm get-parameter --name "/$PROJECT/ecr-registry" --query Paramet
 # notation login exige credential store seguro (o nó não tem): credencial só no ambiente
 export NOTATION_USERNAME=AWS NOTATION_PASSWORD="$(aws ecr get-login-password)"
 DIGEST=$(aws ecr describe-images --repository-name "$PROJECT/orders-api" \
-  --query 'sort_by(imageDetails,&imagePushedAt)[-1].imageDigest' --output text)
+  --query "sort_by(imageDetails[?imageTags != null && !starts_with(imageTags[0], 'sha256-')], &imagePushedAt)[-1].imageDigest" \
+  --output text)  # ignora os artefatos de assinatura do Notation (sem tag ou tag sha256-*)
 
 echo "== 1) Imagem do pipeline (assinada pelo AWS Signer)"
 notation verify "$REGISTRY/$PROJECT/orders-api@$DIGEST" && echo ">>> VÁLIDA: deploy permitido"
