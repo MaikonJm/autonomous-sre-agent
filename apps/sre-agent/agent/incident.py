@@ -105,6 +105,7 @@ class IncidentRunner:
             "id": uuid.uuid4().hex[:8],
             "alertname": alert.get("labels", {}).get("alertname", "unknown"),
             "alert": alert,
+            "severity": self.policy.severity(alert),
             "alert_started_at": alert.get("startsAt"),
             "received_at": _now(),
             "attempts": [],
@@ -180,7 +181,7 @@ class IncidentRunner:
             if review and review["verdict"] == "reject":
                 decision = Decision("escalate", [f"o agente Revisor rejeitou o plano: {review['reason']}"])
             else:
-                decision = self.policy.evaluate(plan, evidence, inc["attempts"])
+                decision = self.policy.evaluate(plan, evidence, inc["attempts"], alert=alert)
             attempt = {"n": n, "signals": signals, "slis_before": evidence["slis"], "plan": plan, "review": review,
                        "decision": {"verdict": decision.verdict, "reasons": decision.reasons},
                        "usage": {k: usage.get(k) for k in ("inputTokens", "outputTokens", "latency_seconds")},

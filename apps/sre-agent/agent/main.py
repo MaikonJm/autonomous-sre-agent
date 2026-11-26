@@ -1,11 +1,12 @@
 """API do agente: recebe webhooks do Alertmanager e roda o loop autônomo."""
 
 import logging
+import hmac
 import threading
 import time
 from collections import deque
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Response
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Response
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 
@@ -112,7 +113,11 @@ def handle(alert: dict) -> None:
 
 
 @app.post("/alertmanager")
-def alertmanager(payload: dict, background: BackgroundTasks):
+def alertmanager(payload: dict, background: BackgroundTasks, x_sre_webhook_token: str = Header(default="")):
+    if settings.webhook_token and not hmac.compare_digest(
+            x_sre_webhook_token.encode("utf-8"), settings.webhook_token.encode("utf-8")):
+        raise HTTPException(401, "Webhook não autorizado")
+    # Sem token configurado, a política bloqueia qualquer remediação.
     started = []
     for alert in payload.get("alerts", []):
         labels = alert.get("labels", {})
@@ -146,7 +151,8 @@ def report_md(incident_id: str):
 
 @app.get("/healthz")
 def healthz():
-    return {"status": "ok", "busy": busy.locked(), "dry_run": settings.dry_run}
+    return {"status": "ok", "busy": busy.locked(), "dry_run": settings.dry_run,
+            "autonomy": settings.autonomy, "environment": settings.environment}
 
 
 @app.get("/selftest")

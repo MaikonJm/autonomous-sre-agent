@@ -31,7 +31,11 @@ class Clock:
 
 
 def make(planner=None, **overrides):
-    s = Settings()
+    # Fake cluster only: explicitly enable the laboratory policy.
+    s = Settings(dry_run=False, autonomy="lab", environment="lab",
+                 alert_levels={"OrdersApiHighErrorRate": 2},
+                 auto_actions=["rollback", "remove_env", "scale", "set_memory_limit", "restart"],
+                 webhook_token="test-only-token")
     for k, v in overrides.items():
         setattr(s, k, v)
     cluster = FakeCluster()
@@ -346,3 +350,43 @@ def test_scribe_parses_postmortem():
     pm, _ = ScribeAgent(FakeLLM('{"resumo":"x","impacto":"y","causa_raiz":"z","cinco_porques":["1","2","3","4","5","6"],'
                                 '"acoes":[{"acao":"a","tipo":"prevenir"}]}')).write({})
     assert len(pm["cinco_porques"]) == 5 and pm["acoes"][0]["tipo"] == "prevenir"
+
+
+# ---------------------------------------------------------------- severity gate
+@pytest.mark.parametrize("level", [4, 5])
+def test_critical_severity_never_executes(level):
+    cluster, runner = make(alert_levels={"OrdersApiHighErrorRate": level})
+    cluster.apply_template(env={"FAULT_ERROR_RATE": "0.5"})
+    cluster.actions.clear()
+    inc = runner.run(ALERT)
+    assert inc["severity"] == level
+    assert inc["outcome"] == "escalated"
+    assert inc["attempts"]  # investigation still happened
+    assert cluster.actions == []
+
+
+def test_reported_critical_cannot_downgrade_operator_level():
+    cluster, runner = make(alert_levels={"OrdersApiHighErrorRate": 2})
+    cluster.apply_template(env={"FAULT_ERROR_RATE": "0.5"})
+    cluster.actions.clear()
+    alert = ALERT | {"labels": ALERT["labels"] | {"severity": "critical", "sre_level": "1"}}
+    inc = runner.run(alert)
+    assert inc["severity"] == 5 and inc["outcome"] == "escalated"
+    assert cluster.actions == []
+
+
+@pytest.mark.parametrize("overrides", [
+    {"alert_levels": {}},
+    {"environment": "prod"},
+    {"autonomy": "observe"},
+    {"webhook_token": ""},
+    {"auto_actions": []},
+    {"enable_reviewer": False},
+])
+def test_remediation_requires_explicit_lab_authorization(overrides):
+    cluster, runner = make(**overrides)
+    cluster.apply_template(env={"FAULT_ERROR_RATE": "0.5"})
+    cluster.actions.clear()
+    inc = runner.run(ALERT)
+    assert inc["outcome"] in ("dry_run", "escalated", "approval_required")
+    assert cluster.actions == []

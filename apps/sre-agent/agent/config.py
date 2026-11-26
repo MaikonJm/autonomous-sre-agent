@@ -1,11 +1,22 @@
 """Configuração do agente, toda por variável de ambiente (ConfigMap)."""
 
 import os
+import json
 from dataclasses import dataclass, field
 
 
 def _list(name: str, default: str) -> list[str]:
     return [x.strip() for x in os.getenv(name, default).split(",") if x.strip()]
+
+def _levels() -> dict[str, int]:
+    # Configuration owned by the operator, not by the alert or LLM.
+    try:
+        raw = json.loads(os.getenv("SRE_ALERT_LEVELS", "{}"))
+        if not isinstance(raw, dict):
+            return {}
+        return {k: v for k, v in raw.items() if isinstance(k, str) and type(v) is int and 1 <= v <= 5}
+    except (ValueError, TypeError):
+        return {}
 
 
 @dataclass
@@ -17,7 +28,12 @@ class Settings:
         "PROMETHEUS_URL", "http://kps-kube-prometheus-stack-prometheus.monitoring:9090"))
 
     # --- autonomia e guardrails ---
-    dry_run: bool = field(default_factory=lambda: os.getenv("DRY_RUN", "false").lower() == "true")
+    dry_run: bool = field(default_factory=lambda: os.getenv("DRY_RUN", "true").lower() != "false")
+    autonomy: str = field(default_factory=lambda: os.getenv("SRE_AUTONOMY", "observe").lower())
+    environment: str = field(default_factory=lambda: os.getenv("SRE_ENVIRONMENT", "unknown").lower())
+    alert_levels: dict[str, int] = field(default_factory=_levels)
+    auto_actions: list[str] = field(default_factory=lambda: _list("SRE_AUTO_ACTIONS", ""))
+    webhook_token: str = field(default_factory=lambda: os.getenv("SRE_WEBHOOK_TOKEN", ""), repr=False)
     min_confidence: str = field(default_factory=lambda: os.getenv("MIN_CONFIDENCE", "medium"))
     max_attempts: int = field(default_factory=lambda: int(os.getenv("MAX_ATTEMPTS", "2")))
     max_actions_per_hour: int = field(default_factory=lambda: int(os.getenv("MAX_ACTIONS_PER_HOUR", "6")))
