@@ -49,7 +49,12 @@ data:
   TARGET_NAMESPACE: orders
   TARGET_DEPLOYMENTS: orders-api
   PROMETHEUS_URL: http://kps-kube-prometheus-stack-prometheus.monitoring:9090
-  DRY_RUN: "false"
+  # Observation by default; the lab operator must explicitly configure remediations.
+  DRY_RUN: "true"
+  SRE_AUTONOMY: observe
+  SRE_ENVIRONMENT: lab
+  SRE_ALERT_LEVELS: '{}'
+  SRE_AUTO_ACTIONS: ""
   # Time de agentes: Revisor de segurança (segunda opinião, só pode ser mais conservador)
   # e Documentador (postmortem em português). "false" volta ao agente único.
   ENABLE_REVIEWER: "true"
@@ -87,6 +92,8 @@ spec:
           envFrom:
             - configMapRef: { name: sre-agent-config }
           env:
+            - name: SRE_WEBHOOK_TOKEN
+              valueFrom: { secretKeyRef: { name: sre-agent-webhook, key: token, optional: true } }
             - name: GITHUB_TOKEN
               valueFrom: { secretKeyRef: { name: sre-agent-github, key: token, optional: true } }
             - name: GITHUB_REPOSITORY

@@ -26,10 +26,35 @@ class Policy:
         self.clock = clock
         self.executed: list[float] = []  # timestamps de ações executadas (rate limit global)
 
-    def evaluate(self, plan: dict, evidence: dict, attempts: list[dict]) -> Decision:
+    def severity(self, alert: dict | None) -> int:
+        labels = (alert or {}).get("labels") or {}
+        if not isinstance(labels, dict) or labels.get("namespace") != self.s.namespace:
+            return 5
+        name = labels.get("alertname")
+        if not isinstance(name, str):
+            return 5
+        configured = self.s.alert_levels.get(name, 5)
+        if type(configured) is not int or not 1 <= configured <= 5:
+            return 5
+        # Origin labels may only increase risk. An unknown explicit label is critical.
+        reported = labels.get("severity")
+        if reported is not None:
+            mapped = {"info": 1, "informational": 1, "low": 2, "warning": 3,
+                      "moderate": 3, "high": 4, "critical": 5}
+            label = str(reported).lower()
+            configured = max(configured, mapped.get(label, int(label) if label in ("1", "2", "3", "4", "5") else 5))
+        level = labels.get("sre_level")
+        if level is not None:
+            configured = max(configured, int(level) if str(level) in ("1", "2", "3", "4", "5") else 5)
+        return configured
+
+    def evaluate(self, plan: dict, evidence: dict, attempts: list[dict], alert: dict | None = None) -> Decision:
         action = plan.get("action") or {}
         kind = action.get("type")
         reasons = []
+        level = self.severity(alert)
+        if level >= 4:
+            return Decision("escalate", [f"N{level}: investigação e escalonamento; nenhuma alteração autorizada"])
 
         if kind == "escalate":
             return Decision("escalate", [f"o modelo pediu escalonamento: {action.get('reason', '')}"])
@@ -84,9 +109,14 @@ class Policy:
         elif kind == "restart":
             reasons.append("rollout restart (sem mudança de configuração)")
 
-        if self.s.dry_run:
-            return Decision("dry_run", reasons + ["DRY_RUN=true: nada é alterado"])
-        return Decision("execute", reasons)
+        if (self.s.dry_run or level == 1 or self.s.autonomy != "lab"
+                or self.s.environment not in ("lab", "test", "sandbox")):
+            return Decision("dry_run", reasons + ["Política de observação: nada é alterado"])
+        if not self.s.webhook_token or not self.s.enable_reviewer:
+            return Decision("approval_required", reasons + ["Remediação exige autenticação do webhook e revisor habilitado"])
+        if kind not in self.s.auto_actions:
+            return Decision("approval_required", reasons + ["Ação não autorizada pelo operador"])
+        return Decision("execute", reasons + [f"N{level}: runbook autorizado em laboratório"])
 
     def record_execution(self):
         self.executed.append(self.clock())

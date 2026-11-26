@@ -65,6 +65,8 @@ MTTR de 62 s, 3 chamadas de LLM, US$ 0,0002.
 
 ## Guardrails
 
+> A política de autonomia N1–N5 passa a bloquear remediação por padrão. Consulte [docs/autonomy.md](docs/autonomy.md) antes de reproduzir os cenários; a demo anterior tinha outra configuração de autonomia.
+
 | Risco | Controle |
 | --- | --- |
 | Um LLM convence o outro | Os agentes não negociam: o Revisor só tem poder de **veto**; aprovar não libera nada que a política barre. Se o Revisor cair, o caso vai para um humano. |
